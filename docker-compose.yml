@@ -1,0 +1,17 @@
+services:
+  deck:
+    build: .
+    image: html-deck-board
+    container_name: html-deck-board
+    restart: unless-stopped
+    ports:
+      # 왼쪽이 서버에서 열리는 포트. 오른쪽은 컨테이너 안쪽이라 바꾸지 않는다.
+      - "${HOST_PORT:-4300}:4300"
+    environment:
+      MAX_UPLOAD: "${MAX_UPLOAD:-50mb}"
+      # 값을 넣으면 올리기·수정·삭제에 암호가 걸린다. 비우면 누구나 할 수 있다.
+      # 값은 여기 적지 말고 같은 폴더의 .env 에 둔다.
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+    volumes:
+      # 올린 발표가 쌓이는 자리. 이 폴더만 백업하면 전부 보존된다.
+      - ./data:/data

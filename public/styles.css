@@ -1,0 +1,489 @@
+:root {
+  --sidebar-w: 272px;
+  --bg: #f4f5f7;
+  --panel: #16181d;
+  --panel-soft: #22252c;
+  --panel-line: #2e323b;
+  --ink: #1b1d22;
+  --ink-soft: #666c78;
+  --line: #dfe2e8;
+  --accent: #3b6cf6;
+  --danger: #d6453d;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+/* 클래스에 display 를 주면 브라우저 기본 [hidden] 규칙을 이겨 버린다. 못박아 둔다. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+button { font: inherit; cursor: pointer; }
+
+kbd {
+  background: var(--panel-soft);
+  border: 1px solid var(--panel-line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100%;
+}
+
+/* ---------- 사이드바 ---------- */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  color: #e6e8ec;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 18px 14px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.brand-mark { color: var(--accent); }
+
+.side-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 14px 12px;
+}
+
+.new-btn,
+.new-folder-btn {
+  padding: 10px;
+  border: 1px dashed var(--panel-line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+  color: #e6e8ec;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: border-color .15s, color .15s;
+}
+
+.new-btn { flex: 1; }
+
+.new-btn:hover,
+.new-folder-btn:hover {
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.search { padding: 0 14px 10px; }
+
+.search input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  background: #0f1116;
+  color: #e6e8ec;
+  font: inherit;
+}
+
+.search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.post-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 10px 12px;
+}
+
+/* ---------- 폴더 ---------- */
+
+.folder { margin-bottom: 4px; }
+
+.folder-head {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.folder-head:hover { background: #1c1f26; }
+
+.folder-head.drag-over {
+  border-color: var(--accent);
+  background: rgba(59, 108, 246, .18);
+}
+
+.folder.active > .folder-head > .folder-toggle > strong { color: #fff; }
+
+.folder-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  background: none;
+  color: #aab0bb;
+  text-align: left;
+}
+
+.folder-toggle .caret {
+  width: 11px;
+  font-size: 9px;
+  line-height: 1;
+  opacity: .65;
+}
+
+.folder-toggle strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-count {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--panel-soft);
+  font-size: 11px;
+  opacity: .8;
+}
+
+.folder-more {
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #777d89;
+  opacity: 0;
+}
+
+.folder-head:hover .folder-more { opacity: 1; }
+.folder-more:hover { color: #fff; }
+
+.folder-body { padding: 2px 0 4px 14px; }
+
+.folder-body .list-empty {
+  padding: 4px 10px 6px;
+  font-size: 12px;
+}
+
+.hit-folder {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .09);
+  font-size: 10.5px;
+}
+
+.post-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  margin-bottom: 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #c8ccd4;
+  line-height: 1.35;
+  cursor: grab;
+}
+
+.post-item:hover { background: var(--panel-soft); }
+
+.post-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.post-item strong {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-item span {
+  font-size: 11.5px;
+  opacity: .62;
+}
+
+.list-empty {
+  padding: 18px 12px;
+  color: #777d89;
+  font-size: 13px;
+}
+
+.sidebar-foot {
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--panel-line);
+  color: #777d89;
+  font-size: 11.5px;
+}
+
+/* ---------- 본문 ---------- */
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.toolbar-title { min-width: 0; flex: 1; }
+
+.toolbar-title h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-title p {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.btn:hover { background: #f0f2f6; }
+
+.btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn.primary:hover { background: #2f5ce0; }
+
+.btn.icon { padding: 7px 10px; }
+
+.folder-select {
+  max-width: 160px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.menu { position: relative; }
+
+.menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 164px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(16, 20, 30, .14);
+}
+
+.menu-pop button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+}
+
+.menu-pop button:hover { background: #f0f2f6; }
+.menu-pop button.danger { color: var(--danger); }
+
+/* 폴더 메뉴는 사이드바 밖으로 띄워야 잘리지 않는다. 위치는 JS 가 잡는다. */
+.menu-pop.floating {
+  position: fixed;
+  right: auto;
+  top: auto;
+  z-index: 70;
+}
+
+.frame-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+
+#frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.exit-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, .78);
+  color: #fff;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s;
+}
+
+.frame-wrap:fullscreen .exit-hint.show { opacity: 1; }
+
+/* ---------- 빈 화면 ---------- */
+
+.empty {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 0;
+  padding: 24px;
+}
+
+.empty-card {
+  max-width: 420px;
+  padding: 40px 32px;
+  border: 2px dashed var(--line);
+  border-radius: 16px;
+  background: #fff;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 30px;
+  color: var(--accent);
+}
+
+.empty-card h2 {
+  margin: 12px 0 6px;
+  font-size: 17px;
+}
+
+.empty-card p {
+  margin: 0 0 18px;
+  color: var(--ink-soft);
+}
+
+/* ---------- 드롭 오버레이 ---------- */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 26, 40, .55);
+  backdrop-filter: blur(2px);
+}
+
+.drop-card {
+  padding: 36px 56px;
+  border: 3px dashed #fff;
+  border-radius: 18px;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.drop-card small {
+  display: block;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  opacity: .85;
+}
+
+/* ---------- 토스트 ---------- */
+
+.toasts {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: 9px;
+  background: #1b1f28;
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(10, 14, 22, .25);
+  font-size: 13px;
+}
+
+.toast.error { background: var(--danger); }
+
+/* ---------- 좁은 화면 ---------- */
+
+@media (max-width: 720px) {
+  /* 좁은 화면에서는 목록을 위로 접어 올린다. 숨기면 글을 고를 길이 없어진다. */
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 38vh) minmax(0, 1fr);
+  }
+  .sidebar-foot { display: none; }
+  .toolbar { flex-wrap: wrap; }
+}

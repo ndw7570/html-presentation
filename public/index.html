@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>발표 게시판</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-mark">▶</span>
+      <span class="brand-name">발표 게시판</span>
+    </div>
+
+    <div class="side-actions">
+      <button class="new-btn" id="newBtn">+ 새 발표 올리기</button>
+      <button class="new-folder-btn" id="newFolderBtn" title="새 폴더 만들기">＋ 폴더</button>
+    </div>
+
+    <div class="search">
+      <input id="search" type="search" placeholder="검색  ( / )" autocomplete="off">
+    </div>
+
+    <nav class="post-list" id="postList" aria-label="발표 목록"></nav>
+
+    <div class="sidebar-foot">
+      <kbd>/</kbd> 검색 · <kbd>N</kbd> 올리기 · <kbd>F</kbd> 발표
+    </div>
+  </aside>
+
+  <main class="stage">
+    <header class="toolbar" id="toolbar" hidden>
+      <div class="toolbar-title">
+        <h1 id="postTitle"></h1>
+        <p id="postMeta"></p>
+      </div>
+      <div class="toolbar-actions">
+        <select class="folder-select" id="folderSelect" aria-label="이 발표가 속한 폴더"></select>
+        <button class="btn primary" id="presentBtn">발표하기</button>
+        <button class="btn" id="copyBtn">링크 복사</button>
+        <button class="btn" id="openBtn">새 탭</button>
+        <div class="menu">
+          <button class="btn icon" id="moreBtn" aria-haspopup="true" aria-expanded="false">···</button>
+          <div class="menu-pop" id="morePop" hidden>
+            <button data-action="rename">제목 바꾸기</button>
+            <button data-action="replace">새 버전 올리기</button>
+            <button data-action="download">원본 내려받기</button>
+            <button data-action="delete" class="danger">삭제</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="frame-wrap" id="frameWrap" hidden>
+      <iframe
+        id="frame"
+        title="발표 내용"
+        allow="fullscreen; clipboard-write"
+        sandbox="allow-scripts allow-popups allow-forms allow-modals allow-downloads"
+      ></iframe>
+      <div class="exit-hint" id="exitHint">Esc 를 누르면 발표를 끝냅니다</div>
+    </div>
+
+    <div class="empty" id="empty">
+      <div class="empty-card">
+        <div class="empty-icon">⬇</div>
+        <h2>HTML 파일을 끌어다 놓으세요</h2>
+        <p>화면 어디에 놓아도 됩니다. 제목은 파일에서 자동으로 가져옵니다.</p>
+        <button class="btn primary" id="emptyBtn">파일 고르기</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="menu-pop floating" id="folderPop" hidden>
+  <button data-action="folder-rename">이름 바꾸기</button>
+  <button data-action="folder-delete" class="danger">폴더 삭제</button>
+</div>
+
+<div class="drop-overlay" id="dropOverlay" hidden>
+  <div class="drop-card">
+    여기에 놓으면 등록됩니다
+    <small id="dropTarget"></small>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<input type="file" id="filePicker" accept=".html,.htm,text/html" multiple hidden>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>
