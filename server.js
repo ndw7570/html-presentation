@@ -2,14 +2,19 @@ import express from 'express'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as store from './lib/store.js'
+import * as users from './lib/users.js'
+import * as session from './lib/session.js'
 import { extractTitle, normalizeLabel, ensureCharset } from './lib/html.js'
+import { sharePage } from './lib/share-page.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const PUBLIC_DIR = path.join(__dirname, 'public')
 
 const PORT = Number(process.env.PORT) || 4300
 const HOST = process.env.HOST || '0.0.0.0'
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
 const MAX_UPLOAD = process.env.MAX_UPLOAD || '50mb'
+// HTTPS 뒤에 둘 때 켠다. 켜면 세션 쿠키가 평문 연결로 나가지 않는다.
+const SECURE_COOKIE = process.env.SECURE_COOKIE === '1'
 
 // 업로드된 HTML 은 남이 쓴 코드다. 직접 주소로 열렸을 때도 이 사이트의
 // 쿠키·localStorage 에 닿지 못하도록 응답 자체를 불투명 출처로 묶는다.
@@ -24,11 +29,92 @@ const app = express()
 app.disable('x-powered-by')
 app.use(express.json({ limit: MAX_UPLOAD }))
 
-function requireToken(req, res, next) {
-  if (!ADMIN_TOKEN) return next()
-  if (req.get('x-admin-token') === ADMIN_TOKEN) return next()
-  res.status(401).json({ error: '쓰기 권한이 필요합니다.' })
+/* ---------- 인증 ---------- */
+
+function requireLogin(req, res, next) {
+  const username = session.read(req)
+  if (!username) return res.status(401).json({ error: '로그인이 필요합니다.' })
+  req.username = username
+  next()
 }
+
+app.get('/api/me', (req, res) => {
+  res.json({ username: session.read(req) })
+})
+
+app.post('/api/login', async (req, res, next) => {
+  try {
+    const username = users.normalizeUsername(req.body?.username)
+    const password = req.body?.password
+    if (!(await users.verify(username, password))) {
+      // 아이디가 틀렸는지 비밀번호가 틀렸는지 알려주지 않는다.
+      return res.status(401).json({ error: '아이디 또는 비밀번호가 맞지 않습니다.' })
+    }
+    session.issue(res, username, SECURE_COOKIE)
+    res.json({ username })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.post('/api/logout', (req, res) => {
+  session.clear(res)
+  res.json({ ok: true })
+})
+
+app.get('/api/users', requireLogin, (req, res) => {
+  res.json({ users: users.list() })
+})
+
+app.post('/api/users', requireLogin, async (req, res, next) => {
+  try {
+    const username = users.normalizeUsername(req.body?.username)
+    const password = req.body?.password
+    const problem = users.validate(username, password)
+    if (problem) return res.status(400).json({ error: problem })
+    if (!(await users.create(username, password))) {
+      return res.status(409).json({ error: '이미 있는 아이디입니다.' })
+    }
+    res.status(201).json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.post('/api/password', requireLogin, async (req, res, next) => {
+  try {
+    const { current, next: nextPassword } = req.body ?? {}
+    if (!(await users.verify(req.username, current))) {
+      return res.status(401).json({ error: '현재 비밀번호가 맞지 않습니다.' })
+    }
+    const problem = users.validate(req.username, nextPassword)
+    if (problem) return res.status(400).json({ error: problem })
+    await users.setPassword(req.username, nextPassword)
+    res.json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.delete('/api/users/:username', requireLogin, async (req, res, next) => {
+  try {
+    const target = users.normalizeUsername(req.params.username)
+    if (target === req.username) {
+      return res.status(400).json({ error: '자기 계정은 지울 수 없습니다.' })
+    }
+    if (users.count() <= 1) {
+      return res.status(400).json({ error: '마지막 계정은 지울 수 없습니다.' })
+    }
+    if (!(await users.remove(target))) {
+      return res.status(404).json({ error: '없는 계정입니다.' })
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/* ---------- 공통 ---------- */
 
 function withPost(req, res) {
   const { id } = req.params
@@ -53,17 +139,58 @@ function resolveFolderId(value) {
   return store.isValidId(value) && store.getFolder(value) ? value : undefined
 }
 
-app.get('/api/config', (req, res) => {
-  res.json({ writeProtected: Boolean(ADMIN_TOKEN) })
+function sendDeck(res, html) {
+  res.set({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Security-Policy': RAW_SANDBOX,
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-cache',
+    // 공유 주소가 검색엔진에 잡히면 "링크를 아는 사람만"이 깨진다.
+    'X-Robots-Tag': 'noindex, nofollow',
+  })
+  res.send(html)
+}
+
+/* ---------- 공유 (로그인 없이 열린다. 읽기 전용) ---------- */
+
+/** 공유 주소가 가리키는 글. 없거나 공유가 꺼져 있으면 null 을 주고 404 를 보낸다. */
+function withSharedPost(req, res) {
+  const { token } = req.params
+  const post = store.isValidShareToken(token) ? store.getShared(token) : null
+  if (!post) {
+    res.status(404).type('html').send(
+      '<meta charset="utf-8"><p style="font:16px system-ui;padding:40px">' +
+        '없는 주소이거나 공유가 꺼진 발표입니다.</p>',
+    )
+    return null
+  }
+  return post
+}
+
+app.get('/s/:token', (req, res) => {
+  const post = withSharedPost(req, res)
+  if (!post) return
+  res.set({ 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' })
+  res.type('html').send(sharePage(post))
 })
 
-app.get('/api/posts', (req, res) => {
+app.get('/s/:token/raw', async (req, res, next) => {
+  try {
+    const post = withSharedPost(req, res)
+    if (!post) return
+    sendDeck(res, await store.readHtml(post.id))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/* ---------- 글·폴더 (로그인 필요) ---------- */
+
+app.get('/api/posts', requireLogin, (req, res) => {
   res.json({ folders: store.listFolders(), posts: store.list() })
 })
 
-/* ---------- 폴더 ---------- */
-
-app.post('/api/folders', requireToken, async (req, res, next) => {
+app.post('/api/folders', requireLogin, async (req, res, next) => {
   try {
     const folder = await store.createFolder(normalizeLabel(req.body?.name, '새 폴더'))
     res.status(201).json({ folder })
@@ -72,7 +199,7 @@ app.post('/api/folders', requireToken, async (req, res, next) => {
   }
 })
 
-app.patch('/api/folders/:id', requireToken, async (req, res, next) => {
+app.patch('/api/folders/:id', requireLogin, async (req, res, next) => {
   try {
     const folder = await store.renameFolder(
       req.params.id,
@@ -85,7 +212,7 @@ app.patch('/api/folders/:id', requireToken, async (req, res, next) => {
   }
 })
 
-app.delete('/api/folders/:id', requireToken, async (req, res, next) => {
+app.delete('/api/folders/:id', requireLogin, async (req, res, next) => {
   try {
     if (!(await store.removeFolder(req.params.id))) {
       return res.status(404).json({ error: '없는 폴더입니다.' })
@@ -96,7 +223,7 @@ app.delete('/api/folders/:id', requireToken, async (req, res, next) => {
   }
 })
 
-app.post('/api/posts', requireToken, async (req, res, next) => {
+app.post('/api/posts', requireLogin, async (req, res, next) => {
   try {
     const { title, html, filename, folderId } = req.body ?? {}
     if (typeof html !== 'string' || !html.trim()) {
@@ -117,10 +244,10 @@ app.post('/api/posts', requireToken, async (req, res, next) => {
   }
 })
 
-app.patch('/api/posts/:id', requireToken, async (req, res, next) => {
+app.patch('/api/posts/:id', requireLogin, async (req, res, next) => {
   try {
     if (!withPost(req, res)) return
-    const { title, html, folderId } = req.body ?? {}
+    const { title, html, folderId, shared } = req.body ?? {}
     const patch = {}
     if (typeof title === 'string') patch.title = normalizeLabel(title, '제목 없는 발표')
     if (typeof html === 'string') {
@@ -132,6 +259,7 @@ app.patch('/api/posts/:id', requireToken, async (req, res, next) => {
       if (folder === undefined) return res.status(400).json({ error: '없는 폴더입니다.' })
       patch.folderId = folder
     }
+    if (typeof shared === 'boolean') patch.shared = shared
     if (!Object.keys(patch).length) {
       return res.status(400).json({ error: '바꿀 내용이 없습니다.' })
     }
@@ -141,7 +269,16 @@ app.patch('/api/posts/:id', requireToken, async (req, res, next) => {
   }
 })
 
-app.delete('/api/posts/:id', requireToken, async (req, res, next) => {
+app.post('/api/posts/:id/share-token', requireLogin, async (req, res, next) => {
+  try {
+    if (!withPost(req, res)) return
+    res.json({ post: await store.rotateShareToken(req.params.id) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.delete('/api/posts/:id', requireLogin, async (req, res, next) => {
   try {
     if (!withPost(req, res)) return
     await store.remove(req.params.id)
@@ -151,24 +288,17 @@ app.delete('/api/posts/:id', requireToken, async (req, res, next) => {
   }
 })
 
-// 발표 원본. iframe 이 읽는 주소이자 그대로 공유할 수 있는 주소다.
-app.get('/p/:id', async (req, res, next) => {
+// 편집 화면의 iframe 이 읽는 주소. 공유용이 아니라 로그인한 사람만 본다.
+app.get('/p/:id', requireLogin, async (req, res, next) => {
   try {
     if (!withPost(req, res)) return
-    res.set({
-      'Content-Type': 'text/html; charset=utf-8',
-      'Content-Security-Policy': RAW_SANDBOX,
-      'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'no-cache',
-    })
-    res.send(await store.readHtml(req.params.id))
+    sendDeck(res, await store.readHtml(req.params.id))
   } catch (err) {
     next(err)
   }
 })
 
-// 원본 파일 그대로 내려받기. 발표 자료를 다시 꺼내 쓸 때 쓴다.
-app.get('/download/:id', async (req, res, next) => {
+app.get('/download/:id', requireLogin, async (req, res, next) => {
   try {
     const post = withPost(req, res)
     if (!post) return
@@ -179,7 +309,18 @@ app.get('/download/:id', async (req, res, next) => {
   }
 })
 
-app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }))
+/* ---------- 화면 ---------- */
+
+app.get('/login', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html')))
+
+// 로그인 전에는 게시판 화면 자체를 내려 주지 않는다.
+// '/' 만 막으면 /index.html 로 그대로 받아 갈 수 있어 둘 다 건다.
+app.get(['/', '/index.html'], (req, res, next) => {
+  if (!session.read(req)) return res.redirect('/login')
+  next()
+})
+
+app.use(express.static(PUBLIC_DIR, { index: 'index.html' }))
 
 app.use((err, req, res, next) => {
   console.error(err)
@@ -189,8 +330,32 @@ app.use((err, req, res, next) => {
     .json({ error: tooLarge ? `파일이 너무 큽니다. (한도 ${MAX_UPLOAD})` : '서버 오류' })
 })
 
+/* ---------- 시작 ---------- */
+
+/** 계정이 하나도 없으면 아무도 들어올 수 없다. 환경변수로 첫 계정을 만든다. */
+async function bootstrapFirstUser() {
+  if (users.count() > 0) return
+  const username = users.normalizeUsername(process.env.ADMIN_USER)
+  const password = process.env.ADMIN_PASSWORD
+  if (!username || !password) {
+    console.warn('\n  계정이 하나도 없어 아무도 로그인할 수 없습니다.')
+    console.warn('  다른 창에서 아래를 치면 계정을 만듭니다 (서버는 켜 둔 채로):\n')
+    console.warn('      npm run adduser\n')
+    return
+  }
+  const problem = users.validate(username, password)
+  if (problem) return console.warn(`첫 계정을 만들지 못했습니다 — ${problem}`)
+  await users.create(username, password)
+  console.log(`첫 계정을 만들었습니다: ${username}`)
+}
+
+await session.init()
 await store.init()
+await users.init()
+await bootstrapFirstUser()
+
 app.listen(PORT, HOST, () => {
   console.log(`발표 게시판 실행 중 — http://localhost:${PORT}`)
-  if (ADMIN_TOKEN) console.log('쓰기 보호 켜짐 (ADMIN_TOKEN)')
+  console.log(`계정 ${users.count()}개 · 공유 주소는 /s/<token> 으로 로그인 없이 열립니다.`)
+  if (!SECURE_COOKIE) console.log('HTTPS 뒤에 둘 때는 SECURE_COOKIE=1 을 켜세요.')
 })

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>로그인 — 발표 게시판</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="login-body">
+
+<form class="login-card" id="form" autocomplete="on">
+  <div class="brand">
+    <span class="brand-mark">▶</span>
+    <span class="brand-name">발표 게시판</span>
+  </div>
+  <p class="login-lead">발표를 올리려면 로그인하세요.<br>공유받은 주소는 로그인 없이 열립니다.</p>
+
+  <label for="username">아이디</label>
+  <input id="username" name="username" autocomplete="username" required autofocus>
+
+  <label for="password">비밀번호</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+  <p class="login-error" id="error" hidden></p>
+  <button class="btn primary" id="submit" type="submit">로그인</button>
+</form>
+
+<script type="module">
+const form = document.getElementById('form')
+const error = document.getElementById('error')
+const submit = document.getElementById('submit')
+
+function fail(message) {
+  error.textContent = message
+  error.hidden = false
+  submit.disabled = false
+  submit.textContent = '로그인'
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  error.hidden = true
+  submit.disabled = true
+  submit.textContent = '확인 중…'
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return fail(data.error || `로그인 실패 (${res.status})`)
+    location.replace('/')
+  } catch {
+    fail('서버에 닿지 못했습니다.')
+  }
+})
+</script>
+</body>
+</html>

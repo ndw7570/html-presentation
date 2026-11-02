@@ -27,7 +27,12 @@
     <nav class="post-list" id="postList" aria-label="발표 목록"></nav>
 
     <div class="sidebar-foot">
-      <kbd>/</kbd> 검색 · <kbd>N</kbd> 올리기 · <kbd>F</kbd> 발표
+      <div class="keys"><kbd>/</kbd> 검색 · <kbd>N</kbd> 올리기 · <kbd>F</kbd> 발표</div>
+      <div class="account">
+        <span id="whoami"></span>
+        <button class="link-btn" id="accountBtn">계정</button>
+        <button class="link-btn" id="logoutBtn">로그아웃</button>
+      </div>
     </div>
   </aside>
 
@@ -40,7 +45,7 @@
       <div class="toolbar-actions">
         <select class="folder-select" id="folderSelect" aria-label="이 발표가 속한 폴더"></select>
         <button class="btn primary" id="presentBtn">발표하기</button>
-        <button class="btn" id="copyBtn">링크 복사</button>
+        <button class="btn" id="shareBtn">공유 링크 복사</button>
         <button class="btn" id="openBtn">새 탭</button>
         <div class="menu">
           <button class="btn icon" id="moreBtn" aria-haspopup="true" aria-expanded="false">···</button>
@@ -48,6 +53,10 @@
             <button data-action="rename">제목 바꾸기</button>
             <button data-action="replace">새 버전 올리기</button>
             <button data-action="download">원본 내려받기</button>
+            <hr>
+            <button data-action="toggle-share" id="toggleShare">공유 끄기</button>
+            <button data-action="rotate-share">새 공유 주소 발급</button>
+            <hr>
             <button data-action="delete" class="danger">삭제</button>
           </div>
         </div>
@@ -78,6 +87,12 @@
 <div class="menu-pop floating" id="folderPop" hidden>
   <button data-action="folder-rename">이름 바꾸기</button>
   <button data-action="folder-delete" class="danger">폴더 삭제</button>
+</div>
+
+<div class="menu-pop floating" id="accountPop" hidden>
+  <button data-action="add-user">계정 추가</button>
+  <button data-action="change-password">내 비밀번호 바꾸기</button>
+  <button data-action="list-users">계정 목록</button>
 </div>
 
 <div class="drop-overlay" id="dropOverlay" hidden>

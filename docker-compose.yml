@@ -9,9 +9,12 @@ services:
       - "${HOST_PORT:-4300}:4300"
     environment:
       MAX_UPLOAD: "${MAX_UPLOAD:-50mb}"
-      # 값을 넣으면 올리기·수정·삭제에 암호가 걸린다. 비우면 누구나 할 수 있다.
+      # 첫 계정. 계정이 하나도 없을 때만 쓰이고, 만든 뒤에는 무시된다.
       # 값은 여기 적지 말고 같은 폴더의 .env 에 둔다.
-      ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+      ADMIN_USER: "${ADMIN_USER:-}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+      # HTTPS 뒤에 둘 때 1 로 켠다. 세션 쿠키가 평문 연결로 안 나간다.
+      SECURE_COOKIE: "${SECURE_COOKIE:-0}"
     volumes:
       # 올린 발표가 쌓이는 자리. 이 폴더만 백업하면 전부 보존된다.
       - ./data:/data

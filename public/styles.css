@@ -250,6 +250,130 @@ kbd {
   font-size: 11.5px;
 }
 
+.account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.account > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #aab0bb;
+  font-weight: 600;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #777d89;
+  font-size: 11.5px;
+  text-decoration: underline;
+}
+
+.link-btn:hover { color: #fff; }
+
+/* ---------- 공유 화면 (읽기 전용) ---------- */
+
+.share-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.share-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.share-title { flex: 1; min-width: 0; }
+
+.share-title h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-title p {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+/* ---------- 로그인 ---------- */
+
+.login-body {
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+}
+
+.login-card {
+  width: min(360px, calc(100vw - 32px));
+  padding: 32px 28px;
+  border: 1px solid var(--panel-line);
+  border-radius: 16px;
+  background: #1b1e25;
+  color: #e6e8ec;
+}
+
+.login-card .brand { padding: 0 0 10px; }
+
+.login-lead {
+  margin: 0 0 22px;
+  color: #8e95a2;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.login-card label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #aab0bb;
+}
+
+.login-card input {
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  background: #0f1116;
+  color: #e6e8ec;
+  font: inherit;
+}
+
+.login-card input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.login-card .btn {
+  width: 100%;
+  padding: 11px;
+  font-weight: 600;
+}
+
+.login-error {
+  margin: 0 0 14px;
+  color: #ff8a81;
+  font-size: 12.5px;
+}
+
 /* ---------- 본문 ---------- */
 
 .stage {
@@ -349,6 +473,12 @@ kbd {
 
 .menu-pop button:hover { background: #f0f2f6; }
 .menu-pop button.danger { color: var(--danger); }
+
+.menu-pop hr {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
 
 /* 폴더 메뉴는 사이드바 밖으로 띄워야 잘리지 않는다. 위치는 JS 가 잡는다. */
 .menu-pop.floating {

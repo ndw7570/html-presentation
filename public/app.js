@@ -23,6 +23,9 @@ const el = {
   morePop: $('morePop'),
   moreBtn: $('moreBtn'),
   folderPop: $('folderPop'),
+  accountPop: $('accountPop'),
+  toggleShare: $('toggleShare'),
+  whoami: $('whoami'),
 }
 
 const state = {
@@ -33,7 +36,7 @@ const state = {
   activeFolderId: null,
   collapsed: new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')),
   query: '',
-  writeProtected: false,
+  username: null,
   pickerMode: 'create',
   // 폴더 메뉴가 어느 폴더를 겨냥하고 있는지.
   menuFolderId: null,
@@ -41,28 +44,19 @@ const state = {
 
 /* ---------- 서버 통신 ---------- */
 
-function token() {
-  let value = sessionStorage.getItem('adminToken')
-  if (!value) {
-    value = window.prompt('쓰기 암호를 입력하세요') || ''
-    if (value) sessionStorage.setItem('adminToken', value)
-  }
-  return value
-}
-
 async function api(method, url, body) {
-  const headers = {}
-  if (body) headers['Content-Type'] = 'application/json'
-  if (state.writeProtected && method !== 'GET') headers['x-admin-token'] = token()
-
   const res = await fetch(url, {
     method,
-    headers,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    if (res.status === 401) sessionStorage.removeItem('adminToken')
+    // 세션이 끊기면 더 두드려 봐야 소용없다. 로그인 화면으로 보낸다.
+    if (res.status === 401) {
+      location.replace('/login')
+      throw new Error('로그인이 필요합니다.')
+    }
     throw new Error(data.error || `요청 실패 (${res.status})`)
   }
   return data
@@ -228,7 +222,10 @@ function renderStage() {
   }
 
   el.title.textContent = post.title
-  el.meta.textContent = `${formatDate(post.createdAt)} 등록 · ${Math.max(1, Math.round(post.bytes / 1024))} KB`
+  el.meta.textContent =
+    `${formatDate(post.createdAt)} 등록 · ${Math.max(1, Math.round(post.bytes / 1024))} KB` +
+    (post.shared ? '' : ' · 공유 꺼짐')
+  el.toggleShare.textContent = post.shared ? '공유 끄기' : '공유 켜기'
   renderFolderSelect(post)
   // 같은 글을 다시 고르면 처음부터 다시 보여준다. 발표 중 되돌릴 때 필요하다.
   el.frame.src = `/p/${post.id}?t=${Date.now()}`
@@ -358,9 +355,8 @@ async function movePost(postId, folderId) {
 
 /* ---------- 글 동작 ---------- */
 
-function copyLink() {
-  const url = `${location.origin}/#/${state.currentId}`
-  const done = () => toast('링크를 복사했습니다.')
+function copyText(url, message) {
+  const done = () => toast(message)
 
   // 사내 서버가 http 면 clipboard API 가 막힌다. 그때는 예전 방식으로 떨어진다.
   if (navigator.clipboard?.writeText) {
@@ -379,6 +375,40 @@ function copyLink() {
     const ok = document.execCommand('copy')
     box.remove()
     ok ? done() : window.prompt('아래 주소를 복사하세요', url)
+  }
+}
+
+const shareUrl = (post) => `${location.origin}/s/${post.shareToken}`
+
+function copyShareLink() {
+  const post = currentPost()
+  if (!post) return
+  if (!post.shared) {
+    return toast('공유가 꺼져 있습니다. ··· 에서 공유를 켜세요.', 'error')
+  }
+  copyText(shareUrl(post), '공유 링크를 복사했습니다. 로그인 없이 열립니다.')
+}
+
+async function toggleShare() {
+  const post = currentPost()
+  try {
+    const { post: next } = await api('PATCH', `/api/posts/${post.id}`, { shared: !post.shared })
+    await refresh()
+    toast(next.shared ? '공유를 켰습니다.' : '공유를 껐습니다. 기존 주소가 막힙니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function rotateShare() {
+  const post = currentPost()
+  if (!window.confirm('새 공유 주소를 발급합니다. 이미 보낸 주소는 더 이상 열리지 않습니다.')) return
+  try {
+    const { post: next } = await api('POST', `/api/posts/${post.id}/share-token`)
+    await refresh()
+    copyText(shareUrl(next), '새 공유 링크를 복사했습니다.')
+  } catch (err) {
+    toast(err.message, 'error')
   }
 }
 
@@ -424,6 +454,49 @@ function closeMenus() {
   el.morePop.hidden = true
   el.moreBtn.setAttribute('aria-expanded', 'false')
   el.folderPop.hidden = true
+  el.accountPop.hidden = true
+}
+
+/* ---------- 계정 ---------- */
+
+async function addUser() {
+  const username = window.prompt('새 계정 아이디 (영문 소문자·숫자·.-_ 3~32자)')
+  if (!username?.trim()) return
+  const password = window.prompt(`"${username.trim()}" 의 비밀번호 (8자 이상)`)
+  if (!password) return
+  try {
+    await api('POST', '/api/users', { username, password })
+    toast(`계정 "${username.trim()}" 을(를) 만들었습니다.`)
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function changePassword() {
+  const current = window.prompt('현재 비밀번호')
+  if (!current) return
+  const next = window.prompt('새 비밀번호 (8자 이상)')
+  if (!next) return
+  try {
+    await api('POST', '/api/password', { current, next })
+    toast('비밀번호를 바꿨습니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function listUsers() {
+  try {
+    const { users } = await api('GET', '/api/users')
+    window.alert(`계정 ${users.length}개\n\n${users.map((u) => `· ${u.username}`).join('\n')}`)
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function logout() {
+  await api('POST', '/api/logout').catch(() => {})
+  location.replace('/login')
 }
 
 /* ---------- 사이드바 이벤트 ---------- */
@@ -508,8 +581,27 @@ $('newBtn').addEventListener('click', () => openPicker('create'))
 $('newFolderBtn').addEventListener('click', createFolder)
 $('emptyBtn').addEventListener('click', () => openPicker('create'))
 $('presentBtn').addEventListener('click', present)
-$('copyBtn').addEventListener('click', copyLink)
+$('shareBtn').addEventListener('click', copyShareLink)
 $('openBtn').addEventListener('click', () => window.open(`/p/${state.currentId}`, '_blank'))
+$('logoutBtn').addEventListener('click', logout)
+
+$('accountBtn').addEventListener('click', (e) => {
+  e.stopPropagation()
+  const open = el.accountPop.hidden
+  closeMenus()
+  if (!open) return
+  const box = e.currentTarget.getBoundingClientRect()
+  el.accountPop.style.left = `${box.left}px`
+  el.accountPop.style.top = `${box.top - 110}px`
+  el.accountPop.hidden = false
+})
+
+el.accountPop.addEventListener('click', (e) => {
+  const action = e.target.dataset.action
+  if (action === 'add-user') addUser()
+  if (action === 'change-password') changePassword()
+  if (action === 'list-users') listUsers()
+})
 
 el.picker.addEventListener('change', () => {
   const files = el.picker.files
@@ -533,6 +625,8 @@ el.morePop.addEventListener('click', (e) => {
   if (action === 'rename') renamePost()
   if (action === 'replace') openPicker('replace')
   if (action === 'download') window.open(`/download/${state.currentId}`, '_blank')
+  if (action === 'toggle-share') toggleShare()
+  if (action === 'rotate-share') rotateShare()
   if (action === 'delete') deletePost()
 })
 
@@ -603,8 +697,10 @@ window.addEventListener('hashchange', () => {
 
 async function start() {
   try {
-    const config = await api('GET', '/api/config')
-    state.writeProtected = config.writeProtected
+    const { username } = await api('GET', '/api/me')
+    if (!username) return location.replace('/login')
+    state.username = username
+    el.whoami.textContent = username
     await refresh()
     const id = location.hash.replace(/^#\/?/, '')
     if (id && state.posts.some((p) => p.id === id)) select(id)
