@@ -59,10 +59,18 @@ kbd {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 18px 18px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   font-weight: 700;
   letter-spacing: -0.2px;
+  text-align: left;
 }
+
+.brand:hover .brand-name { color: #fff; }
 
 .brand-mark { color: var(--accent); }
 

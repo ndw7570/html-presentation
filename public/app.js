@@ -13,6 +13,7 @@ const el = {
   title: $('postTitle'),
   meta: $('postMeta'),
   folderSelect: $('folderSelect'),
+  homeBtn: $('homeBtn'),
   frameWrap: $('frameWrap'),
   frame: $('frame'),
   exitHint: $('exitHint'),
@@ -764,6 +765,13 @@ el.search.addEventListener('input', () => {
 
 el.folderSelect.addEventListener('change', () => {
   movePost(state.currentId, el.folderSelect.value || null)
+})
+
+// 홈 — 보던 발표를 닫고 파일 올리는 화면으로 돌아온다.
+$('homeBtn').addEventListener('click', () => {
+  el.search.value = ''
+  state.query = ''
+  select(null)
 })
 
 $('newBtn').addEventListener('click', () => openPicker('create'))
