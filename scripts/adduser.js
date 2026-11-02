@@ -5,7 +5,7 @@ import { USERS_FILE } from '../lib/paths.js'
 await users.init()
 
 console.log(`계정 파일: ${USERS_FILE}`)
-const existing = users.list().map((u) => u.username)
+const existing = (await users.list()).map((u) => u.username)
 console.log(`현재 계정 ${existing.length}개${existing.length ? ` — ${existing.join(', ')}` : ''}\n`)
 
 // readline 은 하나만 만들고, 줄은 비동기 이터레이터로 꺼낸다.

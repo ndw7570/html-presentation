@@ -39,8 +39,8 @@ function requireLogin(req, res, next) {
 }
 
 // 헬스체크용. 로그인 없이 열려야 컨테이너가 살았는지 볼 수 있다.
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, accounts: users.count() })
+app.get('/api/health', async (req, res) => {
+  res.json({ ok: true, accounts: await users.count() })
 })
 
 app.get('/api/me', (req, res) => {
@@ -67,8 +67,8 @@ app.post('/api/logout', (req, res) => {
   res.json({ ok: true })
 })
 
-app.get('/api/users', requireLogin, (req, res) => {
-  res.json({ users: users.list() })
+app.get('/api/users', requireLogin, async (req, res) => {
+  res.json({ users: await users.list() })
 })
 
 app.post('/api/users', requireLogin, async (req, res, next) => {
@@ -107,7 +107,7 @@ app.delete('/api/users/:username', requireLogin, async (req, res, next) => {
     if (target === req.username) {
       return res.status(400).json({ error: '자기 계정은 지울 수 없습니다.' })
     }
-    if (users.count() <= 1) {
+    if ((await users.count()) <= 1) {
       return res.status(400).json({ error: '마지막 계정은 지울 수 없습니다.' })
     }
     if (!(await users.remove(target))) {
@@ -339,7 +339,7 @@ app.use((err, req, res, next) => {
 
 /** 계정이 하나도 없으면 아무도 들어올 수 없다. 환경변수로 첫 계정을 만든다. */
 async function bootstrapFirstUser() {
-  if (users.count() > 0) return
+  if ((await users.count()) > 0) return
   const username = users.normalizeUsername(process.env.ADMIN_USER)
   const password = process.env.ADMIN_PASSWORD
   if (!username || !password) {
@@ -359,8 +359,10 @@ await store.init()
 await users.init()
 await bootstrapFirstUser()
 
+const accounts = await users.count()
+
 app.listen(PORT, HOST, () => {
   console.log(`발표 게시판 실행 중 — http://localhost:${PORT}`)
-  console.log(`계정 ${users.count()}개 · 공유 주소는 /s/<token> 으로 로그인 없이 열립니다.`)
+  console.log(`계정 ${accounts}개 · 공유 주소는 /s/<token> 으로 로그인 없이 열립니다.`)
   if (!SECURE_COOKIE) console.log('HTTPS 뒤에 둘 때는 SECURE_COOKIE=1 을 켜세요.')
 })
