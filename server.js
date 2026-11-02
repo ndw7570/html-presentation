@@ -17,6 +17,8 @@ const PUBLIC_DIR = path.join(__dirname, 'public')
 const PORT = Number(process.env.PORT) || 4300
 const HOST = process.env.HOST || '0.0.0.0'
 const MAX_UPLOAD = process.env.MAX_UPLOAD || '50mb'
+// 발표자 노트는 index.json 에 통째로 들어간다. 길이를 묶어야 목록 읽기가 느려지지 않는다.
+const MAX_NOTES = 20000
 // HTTPS 뒤에 둘 때 켠다. 켜면 세션 쿠키가 평문 연결로 나가지 않는다.
 const SECURE_COOKIE = process.env.SECURE_COOKIE === '1'
 
@@ -463,9 +465,10 @@ app.post('/api/posts', requireLogin, async (req, res, next) => {
 app.patch('/api/posts/:id', requireLogin, async (req, res, next) => {
   try {
     if (!withPost(req, res)) return
-    const { title, html, filename, folderId, shared } = req.body ?? {}
+    const { title, html, filename, folderId, shared, notes } = req.body ?? {}
     const patch = {}
     if (typeof title === 'string') patch.title = normalizeLabel(title, '제목 없는 발표')
+    if (typeof notes === 'string') patch.notes = notes.slice(0, MAX_NOTES)
     if (typeof html === 'string') {
       const prepared = prepareUpload(html, filename)
       if (prepared.error) return res.status(400).json({ error: prepared.error })

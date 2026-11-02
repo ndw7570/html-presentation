@@ -2,6 +2,8 @@ const $ = (id) => document.getElementById(id)
 
 const UNFILED = '미분류'
 const COLLAPSED_KEY = 'collapsedFolders'
+const NOTES_OPEN_KEY = 'notesOpen'
+const NOTES_SAVE_MS = 800
 // 끌어 옮길 때 쓰는 표식. 파일 드롭과 섞이지 않게 전용 타입을 쓴다.
 const POST_MIME = 'application/x-deck-post'
 const FOLDER_MIME = 'application/x-deck-folder'
@@ -14,6 +16,12 @@ const el = {
   meta: $('postMeta'),
   folderSelect: $('folderSelect'),
   homeBtn: $('homeBtn'),
+  app: document.querySelector('.app'),
+  notes: $('notes'),
+  notesBox: $('notesBox'),
+  notesRead: $('notesRead'),
+  notesState: $('notesState'),
+  notesBtn: $('notesBtn'),
   frameWrap: $('frameWrap'),
   frame: $('frame'),
   exitHint: $('exitHint'),
@@ -38,6 +46,7 @@ const state = {
   // 새로 올리는 발표가 들어갈 폴더. null 이면 미분류.
   activeFolderId: null,
   collapsed: new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')),
+  notesOpen: localStorage.getItem(NOTES_OPEN_KEY) === '1',
   query: '',
   username: null,
   pickerMode: 'create',
@@ -268,12 +277,64 @@ function renderFolderSelect(post) {
   el.folderSelect.title = folderPath(post.folderId ?? null)
 }
 
+/* ---------- 발표자 노트 ---------- */
+
+let notesTimer = null
+
+function renderNotes(post) {
+  el.notes.hidden = !post || !state.notesOpen
+  el.notesBtn.setAttribute('aria-pressed', String(state.notesOpen))
+  el.notesBtn.classList.toggle('on', state.notesOpen)
+  if (!post) return
+
+  const text = post.notes ?? ''
+  // 타이핑 중에 서버 응답이 돌아와 커서가 튀는 일을 막는다.
+  if (el.notesBox.value !== text && document.activeElement !== el.notesBox) {
+    el.notesBox.value = text
+  }
+  el.notesRead.textContent = text || '적어 둔 메모가 없습니다.'
+  el.notesState.textContent = ''
+}
+
+function queueNotesSave() {
+  const id = state.currentId
+  if (!id) return
+  el.notesState.textContent = '입력 중…'
+  clearTimeout(notesTimer)
+  notesTimer = setTimeout(async () => {
+    const text = el.notesBox.value
+    try {
+      await api('PATCH', `/api/posts/${id}`, { notes: text })
+      const post = state.posts.find((p) => p.id === id)
+      if (post) post.notes = text
+      el.notesState.textContent = '저장됨'
+    } catch (err) {
+      el.notesState.textContent = '저장 실패'
+      toast(err.message, 'error')
+    }
+  }, NOTES_SAVE_MS)
+}
+
+function toggleNotes() {
+  state.notesOpen = !state.notesOpen
+  localStorage.setItem(NOTES_OPEN_KEY, state.notesOpen ? '1' : '0')
+  renderNotes(currentPost())
+  if (state.notesOpen && !isNarrow()) el.notesBox.focus()
+}
+
+/* ---------- 본문 ---------- */
+
+const isNarrow = () => window.matchMedia('(max-width: 720px)').matches
+
 function renderStage() {
   const post = currentPost()
 
   el.toolbar.hidden = !post
   el.frameWrap.hidden = !post
   el.empty.hidden = Boolean(post)
+  // 좁은 화면에서는 목록과 본문을 한 번에 하나만 보여준다.
+  el.app.classList.toggle('viewing', Boolean(post))
+  renderNotes(post)
 
   if (!post) {
     el.frame.removeAttribute('src')
@@ -774,6 +835,10 @@ $('homeBtn').addEventListener('click', () => {
   select(null)
 })
 
+$('backBtn').addEventListener('click', () => select(null))
+el.notesBtn.addEventListener('click', toggleNotes)
+el.notesBox.addEventListener('input', queueNotesSave)
+
 $('newBtn').addEventListener('click', () => openPicker('create'))
 $('newFolderBtn').addEventListener('click', createFolder)
 $('emptyBtn').addEventListener('click', () => openPicker('create'))
@@ -869,6 +934,7 @@ window.addEventListener('blur', hideDropZone)
 document.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)
   if (e.metaKey || e.ctrlKey || e.altKey) return
+  // 메모를 쓰는 중에 F 가 발표를 띄우면 안 된다. typing 검사가 그걸 막는다.
 
   if (e.key === '/' && !typing) {
     e.preventDefault()

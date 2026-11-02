@@ -42,8 +42,10 @@
         <h1 id="postTitle"></h1>
         <p id="postMeta"></p>
       </div>
+      <button class="btn back-btn" id="backBtn" title="목록으로">←</button>
       <div class="toolbar-actions">
         <select class="folder-select" id="folderSelect" aria-label="이 발표가 속한 폴더"></select>
+        <button class="btn" id="notesBtn" aria-pressed="false">메모</button>
         <button class="btn primary" id="presentBtn">발표하기</button>
         <button class="btn" id="shareBtn">공유 링크 복사</button>
         <button class="btn" id="openBtn">새 탭</button>
@@ -72,6 +74,22 @@
       ></iframe>
       <div class="exit-hint" id="exitHint">Esc 를 누르면 발표를 끝냅니다</div>
     </div>
+
+    <!--
+      노트는 frame-wrap 밖에 둔다. 전체화면은 frame-wrap 에만 걸리므로
+      발표 중에는 청중 화면에 딸려 들어가지 않는다.
+    -->
+    <section class="notes" id="notes" hidden>
+      <div class="notes-head">
+        <span>발표자 노트 <small>나만 봅니다. 공유 링크에는 안 나갑니다.</small></span>
+        <span class="notes-state" id="notesState"></span>
+      </div>
+      <textarea
+        id="notesBox"
+        placeholder="발표할 때 볼 메모를 적어 두세요. 자동으로 저장됩니다."
+      ></textarea>
+      <pre class="notes-read" id="notesRead"></pre>
+    </section>
 
     <div class="empty" id="empty">
       <div class="empty-card">

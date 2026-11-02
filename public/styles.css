@@ -394,11 +394,19 @@ kbd {
   min-height: 0;
 }
 
+/*
+ * 폴더 공유도 한 번에 하나만. 고르면 본문으로 넘어가고 ← 로 목록에 돌아온다.
+ * 클래스는 그 페이지의 스크립트가 붙인다.
+ */
 @media (max-width: 720px) {
-  .fshare-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 38vh) minmax(0, 1fr);
-  }
+  .fshare-body { grid-template-columns: 1fr; }
+  .fshare-stage { display: none; }
+  .fshare-body.viewing .fshare-list { display: none; }
+  .fshare-body.viewing .fshare-stage { display: flex; }
+  .fshare-back { display: block !important; order: -1; }
+  .share-bar { gap: 10px; padding: 10px 12px; }
+  .share-title h1,
+  .share-title h2 { font-size: 14px; }
 }
 
 /* ---------- 공유 화면 (읽기 전용) ---------- */
@@ -642,6 +650,79 @@ kbd {
 
 .frame-wrap:fullscreen .exit-hint.show { opacity: 1; }
 
+/* ---------- 발표자 노트 ---------- */
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  max-height: 34vh;
+  border-top: 1px solid var(--line);
+  background: #fbfbfd;
+}
+
+.notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 18px 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.notes-head small {
+  margin-left: 6px;
+  font-weight: 400;
+  opacity: .8;
+}
+
+.notes-state {
+  font-weight: 400;
+  font-size: 11.5px;
+  opacity: .75;
+}
+
+.notes textarea {
+  flex: 1;
+  min-height: 110px;
+  margin: 0 14px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: 13.5px/1.7 inherit;
+  resize: none;
+}
+
+.notes textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 모바일(읽기 전용)에서만 보이는 쪽 */
+.notes-read {
+  display: none;
+  margin: 0 14px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  font: 13.5px/1.7 inherit;
+  white-space: pre-wrap;
+  overflow: auto;
+}
+
+.btn.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 좁은 화면에서만 쓰는 뒤로 가기 */
+.back-btn { display: none; }
+
 /* ---------- 빈 화면 ---------- */
 
 .empty {
@@ -731,12 +812,74 @@ kbd {
 
 /* ---------- 좁은 화면 ---------- */
 
+/* ---------- 좁은 화면 (읽기 전용) ---------- */
+
+/*
+ * 모바일에서는 목록과 본문을 반씩 나누지 않는다. 272px 사이드바를 그대로 쓰면
+ * 둘 다 못 읽는 화면이 된다. 한 번에 하나만 보여주고 ← 로 돌아온다.
+ *
+ * 쓰기는 모바일에서 다루지 않는다 — 드래그 업로드도, 폴더 정리도 손가락으로는
+ * 제대로 안 된다. 그래서 그 버튼들을 아예 숨긴다. 읽기만 된다.
+ */
 @media (max-width: 720px) {
-  /* 좁은 화면에서는 목록을 위로 접어 올린다. 숨기면 글을 고를 길이 없어진다. */
   .app {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 38vh) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
-  .sidebar-foot { display: none; }
-  .toolbar { flex-wrap: wrap; }
+
+  .stage { display: none; }
+  .app.viewing .sidebar { display: none; }
+  .app.viewing .stage { display: flex; }
+
+  .back-btn {
+    display: block;
+    /* DOM 에서는 제목 뒤에 있다. 보이는 자리는 맨 앞이어야 한다. */
+    order: -1;
+    padding: 7px 12px;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  /* 쓰기 수단은 전부 감춘다 */
+  .side-actions,
+  .folder-more,
+  .folder-select,
+  #moreBtn,
+  .notes textarea { display: none; }
+
+  .notes-read { display: block; }
+  .notes-head small { display: none; }
+
+  /*
+   * 한 줄에 다 넣으면 제목이 0px 까지 눌려 글자마다 줄바꿈되고 버튼은 화면 밖으로
+   * 넘친다. 윗줄은 ← + 제목, 아랫줄은 버튼(가로 스크롤)으로 나눈다.
+   */
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 10px 12px;
+  }
+
+  .toolbar-title {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .toolbar-title h1 { font-size: 14px; }
+  .toolbar-title p { display: none; }
+
+  .toolbar-actions {
+    flex: 0 0 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .toolbar-actions::-webkit-scrollbar { display: none; }
+  .toolbar-actions .btn { flex: 0 0 auto; }
+
+  .notes { max-height: 28vh; }
+  .brand { padding: 14px 16px 10px; }
+  .search { padding: 0 12px 10px; }
+  .empty-card { padding: 28px 20px; }
+  .empty-card .btn { display: none; }
 }
