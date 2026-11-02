@@ -7,6 +7,7 @@ import * as session from './lib/session.js'
 import { extractTitle, normalizeLabel, ensureCharset } from './lib/html.js'
 import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
+import { folderSharePage, noPreviewPage } from './lib/folder-share-page.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(__dirname, 'public')
@@ -31,10 +32,22 @@ function kindOf(filename) {
   const name = filename ?? ''
   if (/\.(md|markdown|mdown)$/i.test(name)) return 'md'
   if (/\.pdf$/i.test(name)) return 'pdf'
+  if (/\.svg$/i.test(name)) return 'svg'
+  if (/\.png$/i.test(name)) return 'png'
+  if (/\.drawio(\.xml)?$/i.test(name)) return 'drawio'
   return 'html'
 }
 
+// 브라우저가 그대로 열 수 없는 종류. 미리보기 대신 안내를 띄운다.
+const NO_PREVIEW = new Set(['drawio'])
+
 const PDF_MAGIC = '%PDF-'
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+
+const MAGIC = {
+  pdf: (bytes) => bytes.subarray(0, PDF_MAGIC.length).toString('latin1') === PDF_MAGIC,
+  png: (bytes) => bytes.subarray(0, 4).equals(PNG_MAGIC),
+}
 
 /**
  * 올라온 내용을 저장할 형태로 다듬고, 못 받을 것이면 이유를 돌려준다.
@@ -44,11 +57,11 @@ const PDF_MAGIC = '%PDF-'
 function prepareUpload(content, filename) {
   const kind = kindOf(filename)
 
-  if (kind === 'pdf') {
+  if (MAGIC[kind]) {
     const bytes = Buffer.from(content, 'base64')
     if (!bytes.length) return { error: '파일이 비어 있습니다.' }
-    if (bytes.subarray(0, PDF_MAGIC.length).toString('latin1') !== PDF_MAGIC) {
-      return { error: 'PDF 파일이 아닙니다. 확장자만 .pdf 인 파일은 받지 않습니다.' }
+    if (!MAGIC[kind](bytes)) {
+      return { error: `${kind.toUpperCase()} 파일이 아닙니다. 확장자만 바꾼 파일은 받지 않습니다.` }
     }
     return { kind, source: bytes, title: '' }
   }
@@ -56,6 +69,7 @@ function prepareUpload(content, filename) {
   if (!content.trim()) return { error: '내용이 비어 있습니다.' }
 
   if (kind === 'md') return { kind, source: content, title: extractMarkdownTitle(content) }
+  if (kind === 'svg' || kind === 'drawio') return { kind, source: content, title: '' }
 
   const html = ensureCharset(content)
   return { kind, source: html, title: extractTitle(html) }
@@ -66,8 +80,20 @@ function prepareUpload(content, filename) {
  * 변환은 올릴 때가 아니라 보여줄 때 한다 — 렌더러를 고치면 이미 올린 글에도 바로 먹는다.
  */
 async function renderPost(post) {
+  if (NO_PREVIEW.has(post.kind)) {
+    return { body: noPreviewPage(post), type: 'text/html; charset=utf-8', sandbox: true }
+  }
+
   const source = await store.readSource(post.id, post.kind)
+
+  // PDF·PNG 는 격리를 걸면 브라우저 내장 뷰어가 안 뜨거나 의미가 없다.
+  // 둘 다 이 페이지의 JS 로 실행되지 않는 형식이고, 업로드 때 매직바이트로 걸러 둔다.
   if (post.kind === 'pdf') return { body: source, type: 'application/pdf', sandbox: false }
+  if (post.kind === 'png') return { body: source, type: 'image/png', sandbox: false }
+
+  // SVG 는 스크립트를 품을 수 있다. HTML 과 똑같이 가둔다.
+  if (post.kind === 'svg') return { body: source, type: 'image/svg+xml', sandbox: true }
+
   const html = post.kind === 'md' ? renderMarkdown(source, post.title) : source
   return { body: html, type: 'text/html; charset=utf-8', sandbox: true }
 }
@@ -241,15 +267,116 @@ app.get('/s/:token/raw', async (req, res, next) => {
   }
 })
 
+/* ---------- 폴더 공유 ---------- */
+
+function notFound(res, message) {
+  res.status(404).type('html').send(
+    `<meta charset="utf-8"><p style="font:16px system-ui;padding:40px">${message}</p>`,
+  )
+  return null
+}
+
+function withSharedFolder(req, res) {
+  const { token } = req.params
+  const folder = store.isValidShareToken(token) ? store.getSharedFolder(token) : null
+  return folder ?? notFound(res, '없는 주소이거나 공유가 꺼진 폴더입니다.')
+}
+
+/** 공유 폴더를 기준으로 한 상대 경로. 공유 폴더 자신은 빈 문자열이다. */
+function relativePath(folderId, rootId) {
+  const names = []
+  for (let at = folderId; at && at !== rootId; ) {
+    const folder = store.getFolder(at)
+    if (!folder) break
+    names.unshift(folder.name)
+    at = folder.parentId
+  }
+  return names.join(' / ')
+}
+
+app.get('/f/:token', (req, res) => {
+  const folder = withSharedFolder(req, res)
+  if (!folder) return
+  const entries = store
+    .postsInSubtree(folder.id)
+    .map((post) => ({ post, path: relativePath(post.folderId, folder.id) }))
+  res.set({ 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' })
+  res.type('html').send(folderSharePage(folder, entries))
+})
+
+/**
+ * 공유 폴더 안의 글 하나. 글 각자의 `shared` 는 보지 않는다 —
+ * 폴더를 공유했다는 건 그 안을 통째로 연다는 뜻이고, 그 범위는 여기서 확인한다.
+ */
+function withPostInSharedFolder(req, res) {
+  const folder = withSharedFolder(req, res)
+  if (!folder) return null
+  const { postId } = req.params
+  const post = store.isValidId(postId) ? store.get(postId) : null
+  if (!post || !store.subtreeFolderIds(folder.id).includes(post.folderId)) {
+    return notFound(res, '이 폴더에 없는 발표입니다.')
+  }
+  return post
+}
+
+app.get('/f/:token/:postId/raw', async (req, res, next) => {
+  try {
+    const post = withPostInSharedFolder(req, res)
+    if (!post) return
+    sendDeck(res, await renderPost(post))
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.get('/f/:token/:postId/download', async (req, res, next) => {
+  try {
+    const post = withPostInSharedFolder(req, res)
+    if (!post) return
+    const ext = store.fileExtension(post.kind)
+    res.set('Content-Disposition', `attachment; filename="${post.id}.${ext}"`)
+    res.type(ext).send(await store.readSource(post.id, post.kind))
+  } catch (err) {
+    next(err)
+  }
+})
+
 /* ---------- 글·폴더 (로그인 필요) ---------- */
 
 app.get('/api/posts', requireLogin, (req, res) => {
   res.json({ folders: store.listFolders(), posts: store.list() })
 })
 
+/**
+ * 폴더를 어느 폴더 밑에 둘 수 있는지 본다. 클라이언트 말은 믿지 않는다.
+ * 반환값: 쓸 수 있으면 `{ parentId }`, 아니면 `{ error }`.
+ * moving 을 주면 그 폴더를 옮기는 경우로 보고 순환과 자손 깊이까지 함께 본다.
+ */
+function resolveParentId(value, moving = null) {
+  if (value === null || value === undefined || value === '') return { parentId: null }
+  if (!store.isValidId(value) || !store.getFolder(value)) {
+    return { error: '없는 폴더입니다.' }
+  }
+  if (moving && store.isSelfOrDescendant(value, moving)) {
+    return { error: '폴더를 자기 자신이나 그 하위 폴더 안으로 옮길 수 없습니다.' }
+  }
+  // 옮기면 자손들도 같이 내려간다. 가장 깊은 자손이 한도를 넘는지 본다.
+  const depth = store.folderDepth(value) + 1 + (moving ? store.subtreeHeight(moving) : 0)
+  if (depth >= store.MAX_FOLDER_DEPTH) {
+    return { error: `폴더는 ${store.MAX_FOLDER_DEPTH}단까지만 만들 수 있습니다.` }
+  }
+  return { parentId: value }
+}
+
 app.post('/api/folders', requireLogin, async (req, res, next) => {
   try {
-    const folder = await store.createFolder(normalizeLabel(req.body?.name, '새 폴더'))
+    const parent = resolveParentId(req.body?.parentId)
+    if (parent.error) return res.status(400).json({ error: parent.error })
+
+    const folder = await store.createFolder(
+      normalizeLabel(req.body?.name, '새 폴더'),
+      parent.parentId,
+    )
     res.status(201).json({ folder })
   } catch (err) {
     next(err)
@@ -258,10 +385,33 @@ app.post('/api/folders', requireLogin, async (req, res, next) => {
 
 app.patch('/api/folders/:id', requireLogin, async (req, res, next) => {
   try {
-    const folder = await store.renameFolder(
-      req.params.id,
-      normalizeLabel(req.body?.name, '새 폴더'),
-    )
+    const { id } = req.params
+    if (!store.isValidId(id) || !store.getFolder(id)) {
+      return res.status(404).json({ error: '없는 폴더입니다.' })
+    }
+
+    const patch = {}
+    if (typeof req.body?.name === 'string') {
+      patch.name = normalizeLabel(req.body.name, '새 폴더')
+    }
+    if ('parentId' in (req.body ?? {})) {
+      const parent = resolveParentId(req.body.parentId, id)
+      if (parent.error) return res.status(400).json({ error: parent.error })
+      patch.parentId = parent.parentId
+    }
+    if (typeof req.body?.shared === 'boolean') patch.shared = req.body.shared
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ error: '바꿀 내용이 없습니다.' })
+    }
+    res.json({ folder: await store.updateFolder(id, patch) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.post('/api/folders/:id/share-token', requireLogin, async (req, res, next) => {
+  try {
+    const folder = await store.rotateFolderShareToken(req.params.id)
     if (!folder) return res.status(404).json({ error: '없는 폴더입니다.' })
     res.json({ folder })
   } catch (err) {

@@ -2,8 +2,9 @@ const $ = (id) => document.getElementById(id)
 
 const UNFILED = '미분류'
 const COLLAPSED_KEY = 'collapsedFolders'
-// 글을 폴더로 끌어 옮길 때 쓰는 표식. 파일 드롭과 섞이지 않게 전용 타입을 쓴다.
+// 끌어 옮길 때 쓰는 표식. 파일 드롭과 섞이지 않게 전용 타입을 쓴다.
 const POST_MIME = 'application/x-deck-post'
+const FOLDER_MIME = 'application/x-deck-folder'
 
 const el = {
   list: $('postList'),
@@ -23,6 +24,7 @@ const el = {
   morePop: $('morePop'),
   moreBtn: $('moreBtn'),
   folderPop: $('folderPop'),
+  folderShareToggle: $('folderShareToggle'),
   accountPop: $('accountPop'),
   toggleShare: $('toggleShare'),
   whoami: $('whoami'),
@@ -77,6 +79,19 @@ function toast(message, kind = '') {
 const currentPost = () => state.posts.find((p) => p.id === state.currentId)
 const folderName = (id) => state.folders.find((f) => f.id === id)?.name ?? UNFILED
 const postsIn = (folderId) => state.posts.filter((p) => (p.folderId ?? null) === folderId)
+const childFolders = (parentId) => state.folders.filter((f) => (f.parentId ?? null) === parentId)
+
+/** `제품 기획 / 2026` 처럼 위에서부터 이어 붙인 이름. 선택 상자·알림에 쓴다. */
+function folderPath(id) {
+  const names = []
+  for (let at = id; at; ) {
+    const folder = state.folders.find((f) => f.id === at)
+    if (!folder) break
+    names.unshift(folder.name)
+    at = folder.parentId ?? null
+  }
+  return names.length ? names.join(' / ') : UNFILED
+}
 
 function formatDate(iso) {
   const d = new Date(iso)
@@ -105,34 +120,50 @@ function postItem(post) {
   return item
 }
 
-function folderGroup(folderId, name) {
+function folderGroup(folderId, name, depth = 0) {
   const posts = postsIn(folderId)
+  // folderId 가 null 이면 미분류 칸이다. 최상위 폴더도 parentId 가 null 이라,
+  // 그냥 자식을 찾으면 맨 위 폴더들이 미분류 안에 한 번 더 들어간다.
+  const children = folderId === null ? [] : childFolders(folderId)
   const collapsed = state.collapsed.has(String(folderId))
 
   const group = document.createElement('section')
   group.className = `folder${state.activeFolderId === folderId ? ' active' : ''}`
   group.dataset.folderId = folderId ?? ''
+  // 들여쓰기는 CSS 가 계산한다. 단 수만 넘긴다.
+  // head 가 아니라 section 에 걸어야 body 안의 글까지 같이 상속받는다.
+  group.style.setProperty('--depth', depth)
 
   const head = document.createElement('div')
   head.className = 'folder-head'
+  if (folderId !== null) head.draggable = true
 
   const toggle = document.createElement('button')
   toggle.className = 'folder-toggle'
   toggle.dataset.folderId = folderId ?? ''
   const caret = document.createElement('span')
   caret.className = 'caret'
-  caret.textContent = collapsed ? '▶' : '▼'
+  // 접을 것이 없으면 화살표 자리만 비워 둔다. 있는 척하면 눌러 보게 된다.
+  caret.textContent = posts.length || children.length ? (collapsed ? '▶' : '▼') : '·'
   toggle.append(caret)
   const label = document.createElement('strong')
   label.textContent = name
   const count = document.createElement('span')
   count.className = 'folder-count'
-  count.textContent = posts.length
+  count.textContent = children.length ? `${posts.length}+${children.length}` : posts.length
+  count.title = `발표 ${posts.length}개${children.length ? ` · 하위 폴더 ${children.length}개` : ''}`
   toggle.append(label, count)
   head.append(toggle)
 
   // 미분류는 이름을 바꾸거나 지울 대상이 아니다.
   if (folderId !== null) {
+    if (findFolder(folderId)?.shared) {
+      const badge = document.createElement('span')
+      badge.className = 'share-badge'
+      badge.textContent = '공유'
+      badge.title = '이 폴더와 하위 발표를 링크로 볼 수 있습니다'
+      toggle.append(badge)
+    }
     const more = document.createElement('button')
     more.className = 'folder-more'
     more.dataset.folderMore = folderId
@@ -146,14 +177,10 @@ function folderGroup(folderId, name) {
   if (!collapsed) {
     const body = document.createElement('div')
     body.className = 'folder-body'
-    if (posts.length) {
-      posts.forEach((p) => body.append(postItem(p)))
-    } else {
-      const note = document.createElement('p')
-      note.className = 'list-empty'
-      note.textContent = '비어 있음'
-      body.append(note)
-    }
+    // 하위 폴더를 먼저, 그 다음 이 폴더에 직접 든 발표.
+    // 비었으면 아무것도 넣지 않는다 — 개수 배지가 이미 0 을 말하고, 트리에서는 소음이 된다.
+    children.forEach((child) => body.append(folderGroup(child.id, child.name, depth + 1)))
+    posts.forEach((p) => body.append(postItem(p)))
     group.append(body)
   }
 
@@ -173,7 +200,7 @@ function renderSearchResults(query) {
     const item = postItem(post)
     const where = document.createElement('span')
     where.className = 'hit-folder'
-    where.textContent = folderName(post.folderId ?? null)
+    where.textContent = folderPath(post.folderId ?? null)
     item.append(where)
     el.list.append(item)
   }
@@ -193,33 +220,51 @@ function renderList() {
     return
   }
 
-  state.folders.forEach((f) => el.list.append(folderGroup(f.id, f.name)))
+  childFolders(null).forEach((f) => el.list.append(folderGroup(f.id, f.name)))
   el.list.append(folderGroup(null, UNFILED))
 }
 
 /* ---------- 본문 ---------- */
 
-const KIND_LABEL = { html: 'HTML', md: '마크다운', pdf: 'PDF' }
+const KIND_LABEL = {
+  html: 'HTML',
+  md: '마크다운',
+  pdf: 'PDF',
+  svg: 'SVG',
+  png: 'PNG',
+  drawio: 'draw.io',
+}
 const FRAME_SANDBOX = 'allow-scripts allow-popups allow-forms allow-modals allow-downloads'
+// PDF·PNG 는 sandbox 를 걸면 브라우저 내장 뷰어가 아예 안 뜬다(PDF 는 실측).
+// 둘 다 이 페이지의 JS 로 실행되지 않는 형식이라 가둘 이유도 없다.
+const OPEN_KINDS = new Set(['pdf', 'png'])
 
-/**
- * PDF 는 sandbox 를 걸면 브라우저 내장 뷰어가 아예 안 뜬다(실측).
- * 남이 쓴 코드를 실행하는 건 HTML·마크다운 쪽이므로 그 둘만 가둔다.
- */
 function applySandbox(post) {
-  if (post.kind === 'pdf') el.frame.removeAttribute('sandbox')
+  if (OPEN_KINDS.has(post.kind)) el.frame.removeAttribute('sandbox')
   else el.frame.setAttribute('sandbox', FRAME_SANDBOX)
+}
+
+/** 트리 순서로 평평하게 편다. 선택 상자는 줄 순서로만 계층을 보여줄 수 있다. */
+function flattenFolders(parentId = null, depth = 0, out = []) {
+  for (const folder of childFolders(parentId)) {
+    out.push({ ...folder, depth })
+    flattenFolders(folder.id, depth + 1, out)
+  }
+  return out
 }
 
 function renderFolderSelect(post) {
   el.folderSelect.replaceChildren()
-  for (const { id, name } of [{ id: '', name: UNFILED }, ...state.folders]) {
+
+  const rows = [{ id: '', name: UNFILED, depth: 0 }, ...flattenFolders()]
+  for (const { id, name, depth } of rows) {
     const option = document.createElement('option')
     option.value = id
-    option.textContent = name
+    option.textContent = `${'  '.repeat(depth)}${depth ? '└ ' : ''}${name}`
     el.folderSelect.append(option)
   }
   el.folderSelect.value = post.folderId ?? ''
+  el.folderSelect.title = folderPath(post.folderId ?? null)
 }
 
 function renderStage() {
@@ -269,15 +314,15 @@ async function refresh() {
 
 /* ---------- 업로드 ---------- */
 
-const UPLOADABLE = /\.(x?html?|md|markdown|mdown|pdf)$/i
+const UPLOADABLE = /\.(x?html?|md|markdown|mdown|pdf|svg|png|drawio|drawio\.xml)$/i
 const isUploadable = (file) => UPLOADABLE.test(file.name)
-const isPdf = (file) => /\.pdf$/i.test(file.name)
+const isBinary = (file) => /\.(pdf|png)$/i.test(file.name)
 
-const ONLY = 'HTML · 마크다운 · PDF 만 올릴 수 있습니다.'
+const ONLY = 'HTML · 마크다운 · PDF · SVG · PNG · draw.io 만 올릴 수 있습니다.'
 
-/** PDF 는 글자가 아니다. base64 로 바꿔 JSON 에 실어 보낸다. */
+/** PDF·PNG 는 글자가 아니다. base64 로 바꿔 JSON 에 실어 보낸다. */
 async function readPayload(file) {
-  if (!isPdf(file)) return file.text()
+  if (!isBinary(file)) return file.text()
   const bytes = new Uint8Array(await file.arrayBuffer())
   let binary = ''
   // 한 번에 넘기면 인자 수 한도에 걸린다. 조각내어 이어 붙인다.
@@ -336,14 +381,18 @@ function openPicker(mode) {
 
 /* ---------- 폴더 동작 ---------- */
 
-async function createFolder() {
-  const name = window.prompt('새 폴더 이름')
+async function createFolder(parentId = null) {
+  const where = parentId ? `"${folderPath(parentId)}" 아래에 만들 폴더 이름` : '새 폴더 이름'
+  const name = window.prompt(where)
   if (name === null || !name.trim()) return
   try {
-    const { folder } = await api('POST', '/api/folders', { name })
+    const { folder } = await api('POST', '/api/folders', { name, parentId })
     state.activeFolderId = folder.id
+    // 새로 만든 폴더가 접혀 있으면 어디 생겼는지 안 보인다.
+    if (parentId) state.collapsed.delete(String(parentId))
+    rememberCollapsed()
     await refresh()
-    toast(`"${folder.name}" 폴더를 만들었습니다.`)
+    toast(`"${folderPath(folder.id)}" 폴더를 만들었습니다.`)
   } catch (err) {
     toast(err.message, 'error')
   }
@@ -361,15 +410,96 @@ async function renameFolder(id) {
 }
 
 async function deleteFolder(id) {
-  const count = postsIn(id).length
-  const warning = count
-    ? `"${folderName(id)}" 폴더를 지웁니다. 안에 있는 발표 ${count}개는 미분류로 옮겨지고 지워지지 않습니다.`
-    : `"${folderName(id)}" 폴더를 지웁니다.`
+  const posts = postsIn(id).length
+  const children = childFolders(id).length
+  const parent = state.folders.find((f) => f.id === id)?.parentId ?? null
+  const moved = []
+  if (posts) moved.push(`발표 ${posts}개`)
+  if (children) moved.push(`하위 폴더 ${children}개`)
+
+  const warning = moved.length
+    ? `"${folderPath(id)}" 폴더를 지웁니다.\n\n안에 있는 ${moved.join('와 ')}는 ` +
+      `"${folderPath(parent)}" (으)로 옮겨지고 지워지지 않습니다.`
+    : `"${folderPath(id)}" 폴더를 지웁니다.`
   if (!window.confirm(warning)) return
+
   try {
     await api('DELETE', `/api/folders/${id}`)
     await refresh()
     toast('폴더를 지웠습니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+const folderShareUrl = (folder) => `${location.origin}/f/${folder.shareToken}`
+const findFolder = (id) => state.folders.find((f) => f.id === id)
+
+function copyFolderShareLink(id) {
+  const folder = findFolder(id)
+  if (!folder) return
+  if (!folder.shared) {
+    return toast('이 폴더는 공유가 꺼져 있습니다. ··· 에서 켜세요.', 'error')
+  }
+  const count = postsInSubtree(id).length
+  copyText(folderShareUrl(folder), `폴더 공유 링크 복사 — 발표 ${count}개가 열립니다.`)
+}
+
+async function toggleFolderShare(id) {
+  const folder = findFolder(id)
+  if (!folder) return
+  const count = postsInSubtree(id).length
+
+  if (!folder.shared) {
+    const ok = window.confirm(
+      `"${folderPath(id)}" 폴더를 공유합니다.\n\n` +
+        `이 폴더와 하위 폴더에 있는 발표 ${count}개를 링크만 있으면 누구나 볼 수 있게 됩니다.\n` +
+        `앞으로 이 폴더에 올리는 발표도 자동으로 포함됩니다.`,
+    )
+    if (!ok) return
+  }
+
+  try {
+    const { folder: next } = await api('PATCH', `/api/folders/${id}`, { shared: !folder.shared })
+    await refresh()
+    if (next.shared) copyText(folderShareUrl(next), '폴더 공유를 켜고 링크를 복사했습니다.')
+    else toast('폴더 공유를 껐습니다. 기존 주소가 막힙니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function rotateFolderShare(id) {
+  if (!window.confirm('새 폴더 공유 주소를 발급합니다. 이미 보낸 주소는 더 이상 열리지 않습니다.')) {
+    return
+  }
+  try {
+    const { folder } = await api('POST', `/api/folders/${id}/share-token`)
+    await refresh()
+    if (folder.shared) copyText(folderShareUrl(folder), '새 폴더 공유 링크를 복사했습니다.')
+    else toast('새 주소를 발급했습니다. 공유는 꺼져 있습니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+/** 그 폴더와 하위 폴더에 든 글 전부. 공유 범위를 사람에게 보여줄 때 쓴다. */
+function postsInSubtree(id) {
+  const ids = [id]
+  for (let at = 0; at < ids.length; at += 1) {
+    childFolders(ids[at]).forEach((f) => ids.push(f.id))
+  }
+  return state.posts.filter((p) => ids.includes(p.folderId ?? null))
+}
+
+async function moveFolder(id, parentId) {
+  if (id === parentId) return
+  try {
+    await api('PATCH', `/api/folders/${id}`, { parentId })
+    if (parentId) state.collapsed.delete(String(parentId))
+    rememberCollapsed()
+    await refresh()
+    toast(`"${folderPath(id)}" (으)로 옮겼습니다.`)
   } catch (err) {
     toast(err.message, 'error')
   }
@@ -540,6 +670,9 @@ el.list.addEventListener('click', (e) => {
   if (more) {
     e.stopPropagation()
     state.menuFolderId = more.dataset.folderMore
+    el.folderShareToggle.textContent = findFolder(state.menuFolderId)?.shared
+      ? '폴더 공유 끄기'
+      : '폴더 공유 켜기'
     const box = more.getBoundingClientRect()
     el.folderPop.style.left = `${box.left}px`
     el.folderPop.style.top = `${box.bottom + 4}px`
@@ -567,20 +700,35 @@ el.folderPop.addEventListener('click', (e) => {
   const action = e.target.dataset.action
   if (!action) return
   if (action === 'folder-rename') renameFolder(state.menuFolderId)
+  if (action === 'folder-sub') createFolder(state.menuFolderId)
+  if (action === 'folder-top') moveFolder(state.menuFolderId, null)
+  if (action === 'folder-share-copy') copyFolderShareLink(state.menuFolderId)
+  if (action === 'folder-share-toggle') toggleFolderShare(state.menuFolderId)
+  if (action === 'folder-share-rotate') rotateFolderShare(state.menuFolderId)
   if (action === 'folder-delete') deleteFolder(state.menuFolderId)
 })
 
-// 글을 끌어 폴더에 떨어뜨려 옮긴다. 여러 개를 정리할 때 선택 상자보다 빠르다.
+// 글은 폴더로, 폴더는 다른 폴더 안으로 끌어 옮긴다.
+// 선택 상자보다 빠르고, 폴더 이동은 아예 다른 길이 없다.
 el.list.addEventListener('dragstart', (e) => {
   const item = e.target.closest('.post-item')
-  if (!item) return
-  e.dataTransfer.setData(POST_MIME, item.dataset.id)
+  if (item) {
+    e.dataTransfer.setData(POST_MIME, item.dataset.id)
+    e.dataTransfer.effectAllowed = 'move'
+    return
+  }
+  const head = e.target.closest('.folder-head')
+  const id = head?.closest('.folder')?.dataset.folderId
+  if (!id) return
+  e.dataTransfer.setData(FOLDER_MIME, id)
   e.dataTransfer.effectAllowed = 'move'
 })
 
 el.list.addEventListener('dragover', (e) => {
   const head = e.target.closest('.folder-head')
-  if (!head || ![...e.dataTransfer.types].includes(POST_MIME)) return
+  if (!head) return
+  const types = [...e.dataTransfer.types]
+  if (!types.includes(POST_MIME) && !types.includes(FOLDER_MIME)) return
   e.preventDefault()
   e.dataTransfer.dropEffect = 'move'
   head.classList.add('drag-over')
@@ -592,12 +740,19 @@ el.list.addEventListener('dragleave', (e) => {
 
 el.list.addEventListener('drop', (e) => {
   const head = e.target.closest('.folder-head')
+  if (!head) return
   const postId = e.dataTransfer.getData(POST_MIME)
-  if (!head || !postId) return
+  const folderId = e.dataTransfer.getData(FOLDER_MIME)
+  if (!postId && !folderId) return
+
   e.preventDefault()
   e.stopPropagation()
   head.classList.remove('drag-over')
-  movePost(postId, head.closest('.folder').dataset.folderId || null)
+
+  const target = head.closest('.folder').dataset.folderId || null
+  // 자기 자신이나 자손 안으로 넣는 것은 서버가 400 으로 막는다. 여기서는 그 응답을 보여만 준다.
+  if (postId) movePost(postId, target)
+  else moveFolder(folderId, target)
 })
 
 /* ---------- 나머지 이벤트 ---------- */
