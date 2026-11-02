@@ -38,6 +38,11 @@ function requireLogin(req, res, next) {
   next()
 }
 
+// 헬스체크용. 로그인 없이 열려야 컨테이너가 살았는지 볼 수 있다.
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, accounts: users.count() })
+})
+
 app.get('/api/me', (req, res) => {
   res.json({ username: session.read(req) })
 })

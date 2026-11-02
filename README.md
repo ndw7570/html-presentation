@@ -114,11 +114,38 @@ cp .env.example .env     # 포트·첫 계정을 여기서 정한다
 docker compose up -d --build
 ```
 
-계정을 더 만들려면:
+### 우분투에 올릴 때 (계정 만들기까지)
 
 ```bash
-docker compose exec deck node scripts/adduser.js
+# 1) 데이터 폴더를 미리 만들고 주인을 맞춘다.
+#    컨테이너는 node 계정(uid 1000)으로 도는데, Docker 가 만든 폴더는 root 소유라
+#    이 줄을 건너뛰면 "발표를 올릴 때" 쓰기에 실패한다.
+mkdir -p data
+sudo chown -R 1000:1000 data
+
+# 2) 설정
+cp .env.example .env
+nano .env          # HOST_PORT 정도만. ADMIN_USER/PASSWORD 는 비워 둬도 된다
+
+# 3) 띄우기
+docker compose up -d --build
+
+# 4) 계정 만들기 — 대화형이라 -it 가 필요하다
+docker compose exec deck npm run adduser
 ```
+
+4번이 물어보는 아이디·비밀번호가 로그인 정보다. 계정은 `data/users.json` 에 **해시로만**
+저장되고 이미지 안에는 들어가지 않는다.
+
+| 하려는 것 | 명령 |
+|---|---|
+| 계정 더 만들기 | `docker compose exec deck npm run adduser` |
+| 계정 목록 보기 | 사이드바 아래 `계정` → 계정 목록 |
+| 상태 보기 | `curl localhost:4300/api/health` → `{"ok":true,"accounts":N}` |
+
+`.env` 에 `ADMIN_USER` / `ADMIN_PASSWORD` 를 채워 두면 **계정이 0개일 때 자동으로** 하나
+만들어진다. 비밀번호가 `.env` 와 프로세스 환경에 남으므로, 쓸 거면 계정을 만든 뒤
+그 두 줄을 지우는 편이 낫다.
 
 > `.env` 는 `docker compose` 가 읽는다. `npm start` 로 직접 띄울 때는 `--env-file-if-exists`
 > 를 붙여 둬서 역시 읽힌다 — 다만 **Node 20.6 미만에서는 무시된다.**
@@ -135,11 +162,30 @@ docker compose exec deck node scripts/adduser.js
 올린 발표는 호스트의 `./data` 에 쌓인다. 컨테이너를 지우거나 이미지를 다시 말아도 남고,
 **백업은 이 폴더만 뜨면 된다.**
 
-주의할 것 둘.
+### 데이터는 언제 날아가나
 
-- 컨테이너는 `node` 계정(uid 1000)으로 돈다. 리눅스 서버에서 `./data` 에 쓰기가 안 되면
-  `sudo chown -R 1000:1000 ./data` 를 한 번 해 준다. Docker Desktop(Windows/macOS)은 그냥 된다
-- `docker compose down -v` 는 쓰지 않는다. `-v` 는 볼륨을 지우는 옵션이다
+`docker-compose.yml` 은 **바인드 마운트**(`./data:/data`)를 쓴다. 호스트의 실제 폴더를
+컨테이너 안에 끼워 넣는 방식이다. 그래서:
+
+| 명령 | 올린 발표 |
+|---|---|
+| `docker compose down` | 남는다 |
+| `docker compose down -v` | **남는다** — `-v` 는 *이름 있는 볼륨*만 지우고 바인드 마운트는 건드리지 않는다 |
+| `docker rm` / 이미지 재빌드 | 남는다 |
+| `rm -rf ./data` | **전부 사라진다** |
+| 소스 폴더 삭제 / `git clean -xdf` | **전부 사라진다** (`data/` 가 소스 폴더 안에 있어서) |
+
+즉 도커가 데이터를 지울 일은 없고, **위험한 건 호스트에서 폴더를 지우는 쪽**이다.
+`data/` 를 소스 밖(`/srv/deck-data` 등)으로 빼면 그 반경이 줄어든다 — `docker-compose.yml`
+의 `./data` 를 바꾸기만 하면 된다.
+
+> 만약 `./data:/data` 를 `deck-data:/data`(이름 있는 볼륨)로 바꾼다면 그때는
+> `down -v` 가 **데이터를 지운다.** 지금 설정에서는 해당 없다.
+
+### 리눅스 서버 권한
+
+컨테이너는 `node` 계정(uid 1000)으로 돈다. `./data` 에 쓰기가 안 되면
+`sudo chown -R 1000:1000 ./data` 를 한 번 해 준다. Docker Desktop(Windows/macOS)은 그냥 된다.
 
 ## 사내 서버 배포 (도커 없이)
 

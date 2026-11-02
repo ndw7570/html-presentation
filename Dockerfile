@@ -10,6 +10,8 @@ RUN npm ci --omit=dev
 COPY server.js ./
 COPY lib ./lib
 COPY public ./public
+# 컨테이너 안에서 계정을 만들려면(docker compose exec … adduser) 이 폴더가 있어야 한다.
+COPY scripts ./scripts
 
 # 올린 발표는 이미지가 아니라 /data 에 쌓인다. 이미지를 다시 말아도 남는다.
 ENV DATA_DIR=/data
@@ -20,6 +22,6 @@ USER node
 EXPOSE 4300
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/config').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]
