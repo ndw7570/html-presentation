@@ -5,6 +5,7 @@ import * as store from './lib/store.js'
 import * as users from './lib/users.js'
 import * as session from './lib/session.js'
 import { extractTitle, normalizeLabel, ensureCharset } from './lib/html.js'
+import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -23,6 +24,17 @@ const RAW_SANDBOX = 'sandbox allow-scripts allow-popups allow-forms allow-modals
 /** 파일 이름에서 확장자를 떼어 제목 후보로 쓴다. */
 function baseName(filename) {
   return typeof filename === 'string' ? filename.replace(/\.[^.]+$/, '') : ''
+}
+
+const isMarkdownName = (filename) => /\.(md|markdown|mdown)$/i.test(filename ?? '')
+
+/**
+ * 올린 원본을 브라우저가 띄울 수 있는 HTML 한 장으로 만든다.
+ * 변환은 올릴 때가 아니라 보여줄 때 한다 — 렌더러를 고치면 이미 올린 글에도 바로 먹는다.
+ */
+async function renderPost(post) {
+  const source = await store.readSource(post.id, post.kind)
+  return post.kind === 'md' ? renderMarkdown(source, post.title) : source
 }
 
 const app = express()
@@ -183,7 +195,7 @@ app.get('/s/:token/raw', async (req, res, next) => {
   try {
     const post = withSharedPost(req, res)
     if (!post) return
-    sendDeck(res, await store.readHtml(post.id))
+    sendDeck(res, await renderPost(post))
   } catch (err) {
     next(err)
   }
@@ -232,15 +244,19 @@ app.post('/api/posts', requireLogin, async (req, res, next) => {
   try {
     const { title, html, filename, folderId } = req.body ?? {}
     if (typeof html !== 'string' || !html.trim()) {
-      return res.status(400).json({ error: 'HTML 내용이 비어 있습니다.' })
+      return res.status(400).json({ error: '내용이 비어 있습니다.' })
     }
     const folder = resolveFolderId(folderId)
     if (folder === undefined) return res.status(400).json({ error: '없는 폴더입니다.' })
 
-    const body = ensureCharset(html)
+    const markdown = isMarkdownName(filename)
+    const source = markdown ? html : ensureCharset(html)
+    const auto = markdown ? extractMarkdownTitle(source) : extractTitle(source)
+
     const post = await store.create({
-      title: normalizeLabel(title || extractTitle(body) || baseName(filename), '제목 없는 발표'),
-      html: body,
+      title: normalizeLabel(title || auto || baseName(filename), '제목 없는 발표'),
+      source,
+      kind: markdown ? 'md' : 'html',
       folderId: folder,
     })
     res.status(201).json({ post })
@@ -252,12 +268,14 @@ app.post('/api/posts', requireLogin, async (req, res, next) => {
 app.patch('/api/posts/:id', requireLogin, async (req, res, next) => {
   try {
     if (!withPost(req, res)) return
-    const { title, html, folderId, shared } = req.body ?? {}
+    const { title, html, filename, folderId, shared } = req.body ?? {}
     const patch = {}
     if (typeof title === 'string') patch.title = normalizeLabel(title, '제목 없는 발표')
     if (typeof html === 'string') {
-      if (!html.trim()) return res.status(400).json({ error: 'HTML 내용이 비어 있습니다.' })
-      patch.html = ensureCharset(html)
+      if (!html.trim()) return res.status(400).json({ error: '내용이 비어 있습니다.' })
+      const markdown = isMarkdownName(filename)
+      patch.kind = markdown ? 'md' : 'html'
+      patch.source = markdown ? html : ensureCharset(html)
     }
     if (folderId !== undefined) {
       const folder = resolveFolderId(folderId)
@@ -296,8 +314,9 @@ app.delete('/api/posts/:id', requireLogin, async (req, res, next) => {
 // 편집 화면의 iframe 이 읽는 주소. 공유용이 아니라 로그인한 사람만 본다.
 app.get('/p/:id', requireLogin, async (req, res, next) => {
   try {
-    if (!withPost(req, res)) return
-    sendDeck(res, await store.readHtml(req.params.id))
+    const post = withPost(req, res)
+    if (!post) return
+    sendDeck(res, await renderPost(post))
   } catch (err) {
     next(err)
   }
@@ -307,8 +326,10 @@ app.get('/download/:id', requireLogin, async (req, res, next) => {
   try {
     const post = withPost(req, res)
     if (!post) return
-    res.set('Content-Disposition', `attachment; filename="${post.id}.html"`)
-    res.type('html').send(await store.readHtml(req.params.id))
+    // 내려받을 때는 변환물이 아니라 올린 원본을 준다.
+    const ext = store.fileExtension(post.kind)
+    res.set('Content-Disposition', `attachment; filename="${post.id}.${ext}"`)
+    res.type(ext).send(await store.readSource(post.id, post.kind))
   } catch (err) {
     next(err)
   }

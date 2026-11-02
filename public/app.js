@@ -98,7 +98,7 @@ function postItem(post) {
   const title = document.createElement('strong')
   title.textContent = post.title
   const meta = document.createElement('span')
-  meta.textContent = formatDate(post.updatedAt)
+  meta.textContent = post.kind === 'md' ? `MD · ${formatDate(post.updatedAt)}` : formatDate(post.updatedAt)
 
   item.append(title, meta)
   return item
@@ -223,7 +223,8 @@ function renderStage() {
 
   el.title.textContent = post.title
   el.meta.textContent =
-    `${formatDate(post.createdAt)} 등록 · ${Math.max(1, Math.round(post.bytes / 1024))} KB` +
+    `${post.kind === 'md' ? '마크다운' : 'HTML'} · ${formatDate(post.createdAt)} 등록 · ` +
+    `${Math.max(1, Math.round(post.bytes / 1024))} KB` +
     (post.shared ? '' : ' · 공유 꺼짐')
   el.toggleShare.textContent = post.shared ? '공유 끄기' : '공유 켜기'
   renderFolderSelect(post)
@@ -254,11 +255,12 @@ async function refresh() {
 
 /* ---------- 업로드 ---------- */
 
-const isHtmlFile = (file) => /\.x?html?$/i.test(file.name) || file.type === 'text/html'
+const UPLOADABLE = /\.(x?html?|md|markdown|mdown)$/i
+const isUploadable = (file) => UPLOADABLE.test(file.name)
 
 async function uploadFiles(files) {
-  const targets = [...files].filter(isHtmlFile)
-  if (!targets.length) return toast('HTML 파일만 올릴 수 있습니다.', 'error')
+  const targets = [...files].filter(isUploadable)
+  if (!targets.length) return toast('HTML 또는 마크다운 파일만 올릴 수 있습니다.', 'error')
 
   let last = null
   for (const file of targets) {
@@ -283,9 +285,12 @@ async function uploadFiles(files) {
 }
 
 async function replaceCurrent(file) {
-  if (!isHtmlFile(file)) return toast('HTML 파일만 올릴 수 있습니다.', 'error')
+  if (!isUploadable(file)) return toast('HTML 또는 마크다운 파일만 올릴 수 있습니다.', 'error')
   try {
-    await api('PATCH', `/api/posts/${state.currentId}`, { html: await file.text() })
+    await api('PATCH', `/api/posts/${state.currentId}`, {
+      html: await file.text(),
+      filename: file.name,
+    })
     await refresh()
     toast('새 버전으로 바꿨습니다.')
   } catch (err) {

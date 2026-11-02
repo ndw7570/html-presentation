@@ -31,7 +31,7 @@ npm run dev        # 코드 고치면 자동 재시작 (node --watch)
 
 | 하려는 것 | 방법 |
 |---|---|
-| 발표 올리기 | 화면에 `.html` 드롭 (여러 개 동시 가능) 또는 `N` 키 |
+| 발표 올리기 | 화면에 `.html` · `.md` 드롭 (여러 개 동시 가능) 또는 `N` 키 |
 | 주제 폴더 만들기 | 사이드바 `＋ 폴더` |
 | 폴더에 넣기 | 툴바의 폴더 선택 상자를 바꾸거나, 목록에서 글을 폴더 이름 위로 끌어다 놓기 |
 | 폴더 이름/삭제 | 폴더 이름 위에 마우스를 올리면 나오는 `···` |
@@ -72,7 +72,10 @@ npm run dev        # 코드 고치면 자동 재시작 (node --watch)
 ```
 data/
   index.json        폴더 목록 + 글 목록 (사람이 읽고 고칠 수 있는 형식)
+  users.json        계정 (비밀번호는 해시로만)
+  session-secret    세션 서명 열쇠
   posts/<id>.html   올린 원본 그대로
+  posts/<id>.md     마크다운도 원본 그대로
 ```
 
 ```jsonc
@@ -87,6 +90,34 @@ data/
 서버가 뜰 때 `folders: []` 와 `folderId: null` 을 채워 넣는다.
 
 DB 가 없다. `data/` 폴더를 통째로 복사하면 다른 서버로 그대로 옮겨진다. 백업도 이 폴더만 뜨면 된다.
+
+## 마크다운 (`.md`)
+
+마크다운은 **보여줄 때** HTML 로 바꾼다. 원본 `.md` 가 그대로 저장되므로 내려받으면
+올린 파일이 나오고, 렌더러를 고치면 이미 올린 글에도 바로 먹는다.
+
+**빈 줄 뒤에 홀로 선 `---` 가 있으면 슬라이드**, 없으면 스크롤 문서가 된다.
+
+````markdown
+---
+author: 남덕우      ← YAML 머리말은 발표에 안 나온다
+---
+
+# 첫 장
+
+본문
+
+---
+
+## 둘째 장
+````
+
+- 슬라이드 조작: `→ ↓ Space Enter` 다음 · `← ↑ Backspace` 이전 · `Home/End` 처음·끝 ·
+  화면 오른쪽/왼쪽 절반 클릭. 오른쪽 아래에 `1 / 3` 이 뜬다
+- 주소 끝의 `#2` 로 특정 장을 바로 연다
+- 글 밑줄로 쓴 `---`(Setext 제목)는 **자르지 않는다.** 앞에 빈 줄이 있어야 구분선으로 본다
+- 제목은 첫 `# 제목` → 파일 이름 순
+- 슬라이드 기능은 **외부 라이브러리를 안 쓴다.** 인터넷이 없는 사내망에서도 그대로 돈다
 
 ## 올릴 수 있는 HTML
 
@@ -195,7 +226,8 @@ docker compose exec deck npm run adduser
 WorkingDirectory=/srv/deck
 Environment=PORT=4300
 Environment=DATA_DIR=/srv/deck-data
-Environment=ADMIN_TOKEN=<배포 환경에서 주입>
+Environment=SECURE_COOKIE=1
+# 첫 계정은 `npm run adduser` 로 따로 만든다
 ExecStart=/usr/bin/node server.js
 Restart=always
 ```
@@ -208,25 +240,41 @@ Restart=always
 
 ## API
 
+로그인이 필요한 것은 **로그인 필요** 로 적었다. 나머지는 누구나 부를 수 있다.
+
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| `GET` | `/api/config` | 쓰기 보호 여부 |
-| `GET` | `/api/posts` | 폴더 + 글 목록 |
-| `POST` | `/api/posts` | 등록 `{html, title?, filename?, folderId?}` |
-| `PATCH` | `/api/posts/:id` | 제목/내용/폴더 수정 `{title?, html?, folderId?}` |
-| `DELETE` | `/api/posts/:id` | 삭제 |
-| `POST` | `/api/folders` | 폴더 생성 `{name}` |
-| `PATCH` | `/api/folders/:id` | 폴더 이름 변경 `{name}` |
-| `DELETE` | `/api/folders/:id` | 폴더 삭제 (안의 글은 미분류로) |
-| `GET` | `/p/:id` | 발표 원본 (iframe·공유용) |
-| `GET` | `/download/:id` | 원본 내려받기 |
+| `GET` | `/api/health` | 살아 있는지 + 계정 수 |
+| `GET` | `/api/me` | 지금 로그인한 아이디 (없으면 `null`) |
+| `POST` | `/api/login` | `{username, password}` |
+| `POST` | `/api/logout` | |
+| `GET` | `/s/:token` | 공유 화면 (읽기 전용) |
+| `GET` | `/s/:token/raw` | 공유 발표 본문 |
+| `GET` | `/api/posts` | 폴더 + 글 목록 — 로그인 필요 |
+| `POST` | `/api/posts` | 등록 `{html, filename?, title?, folderId?}` — 로그인 필요 |
+| `PATCH` | `/api/posts/:id` | `{title?, html?, filename?, folderId?, shared?}` — 로그인 필요 |
+| `POST` | `/api/posts/:id/share-token` | 공유 주소 재발급 — 로그인 필요 |
+| `DELETE` | `/api/posts/:id` | 삭제 — 로그인 필요 |
+| `POST` `PATCH` `DELETE` | `/api/folders[/:id]` | 폴더 생성·이름변경·삭제 — 로그인 필요 |
+| `GET` `POST` | `/api/users` | 계정 목록·추가 — 로그인 필요 |
+| `POST` | `/api/password` | `{current, next}` — 로그인 필요 |
+| `GET` | `/p/:id` | 편집 화면용 본문 — 로그인 필요 |
+| `GET` | `/download/:id` | 올린 원본 내려받기 — 로그인 필요 |
+
+`POST /api/posts` 의 `html` 은 **파일 내용**이고, 마크다운인지 HTML 인지는 `filename` 의
+확장자로 가린다.
 
 ## 파일 구성
 
 ```
 server.js            라우팅
 lib/store.js         파일시스템 저장소 (쓰기 직렬화·원자적 교체)
-lib/html.js          제목 추출, charset 보강
+lib/html.js          HTML 제목 추출, charset 보강
+lib/markdown.js      마크다운 -> HTML (문서 / 슬라이드)
+lib/users.js         계정 (scrypt 해시)
+lib/session.js       서명 쿠키 세션
+lib/share-page.js    공유 주소가 보여주는 읽기 전용 화면
+scripts/adduser.js   계정 만들기
 public/              화면 (빌드 없음, 바닐라 JS)
 Dockerfile           node:22-alpine, 비루트(node) 실행, 헬스체크 포함
 docker-compose.yml   포트·암호·볼륨
