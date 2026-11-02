@@ -98,7 +98,8 @@ function postItem(post) {
   const title = document.createElement('strong')
   title.textContent = post.title
   const meta = document.createElement('span')
-  meta.textContent = post.kind === 'md' ? `MD · ${formatDate(post.updatedAt)}` : formatDate(post.updatedAt)
+  const tag = post.kind === 'md' ? 'MD · ' : post.kind === 'pdf' ? 'PDF · ' : ''
+  meta.textContent = `${tag}${formatDate(post.updatedAt)}`
 
   item.append(title, meta)
   return item
@@ -198,6 +199,18 @@ function renderList() {
 
 /* ---------- 본문 ---------- */
 
+const KIND_LABEL = { html: 'HTML', md: '마크다운', pdf: 'PDF' }
+const FRAME_SANDBOX = 'allow-scripts allow-popups allow-forms allow-modals allow-downloads'
+
+/**
+ * PDF 는 sandbox 를 걸면 브라우저 내장 뷰어가 아예 안 뜬다(실측).
+ * 남이 쓴 코드를 실행하는 건 HTML·마크다운 쪽이므로 그 둘만 가둔다.
+ */
+function applySandbox(post) {
+  if (post.kind === 'pdf') el.frame.removeAttribute('sandbox')
+  else el.frame.setAttribute('sandbox', FRAME_SANDBOX)
+}
+
 function renderFolderSelect(post) {
   el.folderSelect.replaceChildren()
   for (const { id, name } of [{ id: '', name: UNFILED }, ...state.folders]) {
@@ -223,11 +236,12 @@ function renderStage() {
 
   el.title.textContent = post.title
   el.meta.textContent =
-    `${post.kind === 'md' ? '마크다운' : 'HTML'} · ${formatDate(post.createdAt)} 등록 · ` +
+    `${KIND_LABEL[post.kind] ?? 'HTML'} · ${formatDate(post.createdAt)} 등록 · ` +
     `${Math.max(1, Math.round(post.bytes / 1024))} KB` +
     (post.shared ? '' : ' · 공유 꺼짐')
   el.toggleShare.textContent = post.shared ? '공유 끄기' : '공유 켜기'
   renderFolderSelect(post)
+  applySandbox(post)
   // 같은 글을 다시 고르면 처음부터 다시 보여준다. 발표 중 되돌릴 때 필요하다.
   el.frame.src = `/p/${post.id}?t=${Date.now()}`
 }
@@ -255,19 +269,34 @@ async function refresh() {
 
 /* ---------- 업로드 ---------- */
 
-const UPLOADABLE = /\.(x?html?|md|markdown|mdown)$/i
+const UPLOADABLE = /\.(x?html?|md|markdown|mdown|pdf)$/i
 const isUploadable = (file) => UPLOADABLE.test(file.name)
+const isPdf = (file) => /\.pdf$/i.test(file.name)
+
+const ONLY = 'HTML · 마크다운 · PDF 만 올릴 수 있습니다.'
+
+/** PDF 는 글자가 아니다. base64 로 바꿔 JSON 에 실어 보낸다. */
+async function readPayload(file) {
+  if (!isPdf(file)) return file.text()
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  // 한 번에 넘기면 인자 수 한도에 걸린다. 조각내어 이어 붙인다.
+  for (let at = 0; at < bytes.length; at += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000))
+  }
+  return btoa(binary)
+}
 
 async function uploadFiles(files) {
   const targets = [...files].filter(isUploadable)
-  if (!targets.length) return toast('HTML 또는 마크다운 파일만 올릴 수 있습니다.', 'error')
+  if (!targets.length) return toast(ONLY, 'error')
 
   let last = null
   for (const file of targets) {
     try {
       // 파일 안에 <title>/<h1> 이 없을 때 서버가 파일 이름을 제목으로 쓴다.
       const { post } = await api('POST', '/api/posts', {
-        html: await file.text(),
+        html: await readPayload(file),
         filename: file.name,
         folderId: state.activeFolderId,
       })
@@ -285,10 +314,10 @@ async function uploadFiles(files) {
 }
 
 async function replaceCurrent(file) {
-  if (!isUploadable(file)) return toast('HTML 또는 마크다운 파일만 올릴 수 있습니다.', 'error')
+  if (!isUploadable(file)) return toast(ONLY, 'error')
   try {
     await api('PATCH', `/api/posts/${state.currentId}`, {
-      html: await file.text(),
+      html: await readPayload(file),
       filename: file.name,
     })
     await refresh()

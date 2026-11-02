@@ -26,15 +26,50 @@ function baseName(filename) {
   return typeof filename === 'string' ? filename.replace(/\.[^.]+$/, '') : ''
 }
 
-const isMarkdownName = (filename) => /\.(md|markdown|mdown)$/i.test(filename ?? '')
+/** 파일 이름으로 종류를 가린다. 내용 검사는 업로드 쪽에서 따로 한다. */
+function kindOf(filename) {
+  const name = filename ?? ''
+  if (/\.(md|markdown|mdown)$/i.test(name)) return 'md'
+  if (/\.pdf$/i.test(name)) return 'pdf'
+  return 'html'
+}
+
+const PDF_MAGIC = '%PDF-'
 
 /**
- * 올린 원본을 브라우저가 띄울 수 있는 HTML 한 장으로 만든다.
+ * 올라온 내용을 저장할 형태로 다듬고, 못 받을 것이면 이유를 돌려준다.
+ * PDF 는 base64 로 올라오고, 본문 첫 바이트가 진짜 PDF 인지 반드시 확인한다 —
+ * PDF 는 격리 없이 서빙되므로, 이름만 .pdf 인 HTML 이 통과하면 거기가 구멍이 된다.
+ */
+function prepareUpload(content, filename) {
+  const kind = kindOf(filename)
+
+  if (kind === 'pdf') {
+    const bytes = Buffer.from(content, 'base64')
+    if (!bytes.length) return { error: '파일이 비어 있습니다.' }
+    if (bytes.subarray(0, PDF_MAGIC.length).toString('latin1') !== PDF_MAGIC) {
+      return { error: 'PDF 파일이 아닙니다. 확장자만 .pdf 인 파일은 받지 않습니다.' }
+    }
+    return { kind, source: bytes, title: '' }
+  }
+
+  if (!content.trim()) return { error: '내용이 비어 있습니다.' }
+
+  if (kind === 'md') return { kind, source: content, title: extractMarkdownTitle(content) }
+
+  const html = ensureCharset(content)
+  return { kind, source: html, title: extractTitle(html) }
+}
+
+/**
+ * 올린 원본을 브라우저에 보낼 형태로 바꾼다.
  * 변환은 올릴 때가 아니라 보여줄 때 한다 — 렌더러를 고치면 이미 올린 글에도 바로 먹는다.
  */
 async function renderPost(post) {
   const source = await store.readSource(post.id, post.kind)
-  return post.kind === 'md' ? renderMarkdown(source, post.title) : source
+  if (post.kind === 'pdf') return { body: source, type: 'application/pdf', sandbox: false }
+  const html = post.kind === 'md' ? renderMarkdown(source, post.title) : source
+  return { body: html, type: 'text/html; charset=utf-8', sandbox: true }
 }
 
 const app = express()
@@ -156,16 +191,21 @@ function resolveFolderId(value) {
   return store.isValidId(value) && store.getFolder(value) ? value : undefined
 }
 
-function sendDeck(res, html) {
+/**
+ * PDF 에는 sandbox 를 걸지 않는다 — 걸면 브라우저 내장 뷰어가 아예 안 뜬다(실측).
+ * 대신 PDF 는 우리 페이지의 JS 로 실행되지 않고, nosniff 로 HTML 로 둔갑하는 길도 막는다.
+ * 그 둘을 묶어 주는 게 업로드 때의 매직바이트 검사다.
+ */
+function sendDeck(res, { body, type, sandbox }) {
   res.set({
-    'Content-Type': 'text/html; charset=utf-8',
-    'Content-Security-Policy': RAW_SANDBOX,
+    'Content-Type': type,
     'X-Content-Type-Options': 'nosniff',
     'Cache-Control': 'no-cache',
     // 공유 주소가 검색엔진에 잡히면 "링크를 아는 사람만"이 깨진다.
     'X-Robots-Tag': 'noindex, nofollow',
+    ...(sandbox ? { 'Content-Security-Policy': RAW_SANDBOX } : {}),
   })
-  res.send(html)
+  res.send(body)
 }
 
 /* ---------- 공유 (로그인 없이 열린다. 읽기 전용) ---------- */
@@ -243,20 +283,16 @@ app.delete('/api/folders/:id', requireLogin, async (req, res, next) => {
 app.post('/api/posts', requireLogin, async (req, res, next) => {
   try {
     const { title, html, filename, folderId } = req.body ?? {}
-    if (typeof html !== 'string' || !html.trim()) {
-      return res.status(400).json({ error: '내용이 비어 있습니다.' })
-    }
     const folder = resolveFolderId(folderId)
     if (folder === undefined) return res.status(400).json({ error: '없는 폴더입니다.' })
 
-    const markdown = isMarkdownName(filename)
-    const source = markdown ? html : ensureCharset(html)
-    const auto = markdown ? extractMarkdownTitle(source) : extractTitle(source)
+    const prepared = prepareUpload(html, filename)
+    if (prepared.error) return res.status(400).json({ error: prepared.error })
 
     const post = await store.create({
-      title: normalizeLabel(title || auto || baseName(filename), '제목 없는 발표'),
-      source,
-      kind: markdown ? 'md' : 'html',
+      title: normalizeLabel(title || prepared.title || baseName(filename), '제목 없는 발표'),
+      source: prepared.source,
+      kind: prepared.kind,
       folderId: folder,
     })
     res.status(201).json({ post })
@@ -272,10 +308,10 @@ app.patch('/api/posts/:id', requireLogin, async (req, res, next) => {
     const patch = {}
     if (typeof title === 'string') patch.title = normalizeLabel(title, '제목 없는 발표')
     if (typeof html === 'string') {
-      if (!html.trim()) return res.status(400).json({ error: '내용이 비어 있습니다.' })
-      const markdown = isMarkdownName(filename)
-      patch.kind = markdown ? 'md' : 'html'
-      patch.source = markdown ? html : ensureCharset(html)
+      const prepared = prepareUpload(html, filename)
+      if (prepared.error) return res.status(400).json({ error: prepared.error })
+      patch.kind = prepared.kind
+      patch.source = prepared.source
     }
     if (folderId !== undefined) {
       const folder = resolveFolderId(folderId)
