@@ -1,5 +1,6 @@
 import express from 'express'
 import path from 'node:path'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import * as store from './lib/store.js'
 import * as users from './lib/users.js'
@@ -8,6 +9,7 @@ import { extractTitle, normalizeLabel, ensureCharset } from './lib/html.js'
 import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
 import { folderSharePage, noPreviewPage } from './lib/folder-share-page.js'
+import { drawioPage } from './lib/drawio-page.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(__dirname, 'public')
@@ -38,8 +40,10 @@ function kindOf(filename) {
   return 'html'
 }
 
-// 브라우저가 그대로 열 수 없는 종류. 미리보기 대신 안내를 띄운다.
-const NO_PREVIEW = new Set(['drawio'])
+// 뷰어 파일이 저장소에 있어야 .drawio 를 그릴 수 있다.
+// 없으면(내려받기 전이거나 지운 경우) 빈 화면 대신 안내를 띄운다.
+const DRAWIO_VIEWER = path.join(PUBLIC_DIR, 'vendor', 'drawio-viewer.min.js')
+const hasDrawioViewer = existsSync(DRAWIO_VIEWER)
 
 const PDF_MAGIC = '%PDF-'
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47])
@@ -80,11 +84,16 @@ function prepareUpload(content, filename) {
  * 변환은 올릴 때가 아니라 보여줄 때 한다 — 렌더러를 고치면 이미 올린 글에도 바로 먹는다.
  */
 async function renderPost(post) {
-  if (NO_PREVIEW.has(post.kind)) {
+  if (post.kind === 'drawio' && !hasDrawioViewer) {
     return { body: noPreviewPage(post), type: 'text/html; charset=utf-8', sandbox: true }
   }
 
   const source = await store.readSource(post.id, post.kind)
+
+  if (post.kind === 'drawio') {
+    const body = drawioPage({ title: post.title, xml: source })
+    return { body, type: 'text/html; charset=utf-8', sandbox: true }
+  }
 
   // PDF·PNG 는 격리를 걸면 브라우저 내장 뷰어가 안 뜨거나 의미가 없다.
   // 둘 다 이 페이지의 JS 로 실행되지 않는 형식이고, 업로드 때 매직바이트로 걸러 둔다.
