@@ -23,6 +23,7 @@ const el = {
   notesState: $('notesState'),
   notesBtn: $('notesBtn'),
   storageNotice: $('storageNotice'),
+  resetBtn: $('resetBtn'),
   frameWrap: $('frameWrap'),
   frame: $('frame'),
   exitHint: $('exitHint'),
@@ -316,12 +317,20 @@ window.addEventListener('message', async (e) => {
     return
   }
 
+  // 자료가 뜰 때 저장된 값이 몇 개인지 알려 준다. 있을 때만 되돌리기를 보여 준다.
+  if (msg.kind === 'ready') {
+    el.resetBtn.hidden = !msg.keys
+    return
+  }
+
   if (msg.kind !== 'save') return
   clearTimeout(stateTimer)
   stateTimer = setTimeout(async () => {
     try {
       const { bytes } = await api('PUT', `/api/state/${id}`, { state: msg.state })
       el.notesState.textContent = `자료 상태 저장됨 (${Math.max(1, Math.round(bytes / 1024))}KB)`
+      // 방금 저장했으니 되돌릴 것이 생겼다.
+      el.resetBtn.hidden = false
     } catch (err) {
       toast(`자료 상태를 저장하지 못했습니다 — ${err.message}`, 'error')
     }
@@ -401,6 +410,8 @@ function renderStage() {
   renderFolderSelect(post)
   applySandbox(post)
   showStorageNotice(post)
+  // 자료가 뜨면서 저장된 게 있다고 알려 주면 그때 다시 켠다.
+  el.resetBtn.hidden = true
   // 같은 글을 다시 고르면 처음부터 다시 보여준다. 발표 중 되돌릴 때 필요하다.
   el.frame.src = `/p/${post.id}?t=${Date.now()}`
 }
@@ -790,6 +801,28 @@ async function deletePost() {
   }
 }
 
+/**
+ * 자료가 저장해 둔 것을 모두 지운다.
+ * 저장 자리가 자료당 하나라 **보는 사람 모두에게** 되돌아간다. 그래서 그렇게 묻는다.
+ */
+async function resetState() {
+  const post = currentPost()
+  if (!post) return
+  if (!window.confirm(
+    `"${post.title}" 에 저장된 것을 모두 지우고 맨 처음 상태로 되돌립니다.\n` +
+      '이 발표를 보는 모든 사람에게 적용됩니다. 되돌릴 수 없습니다.',
+  )) return
+  try {
+    await api('DELETE', `/api/state/${post.id}`)
+    el.resetBtn.hidden = true
+    // 상태는 그릴 때 코드에 박히므로, 다시 불러와야 처음 모습이 된다.
+    el.frame.src = `/p/${post.id}?t=${Date.now()}`
+    toast('처음 상태로 되돌렸습니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
 function present() {
   if (!state.currentId) return
   el.frameWrap.requestFullscreen?.().then(() => {
@@ -1024,6 +1057,7 @@ $('emptyBtn').addEventListener('click', () => openPicker('create'))
 $('presentBtn').addEventListener('click', present)
 $('shareBtn').addEventListener('click', copyShareLink)
 $('openBtn').addEventListener('click', () => window.open(`/p/${state.currentId}`, '_blank'))
+el.resetBtn.addEventListener('click', resetState)
 $('logoutBtn').addEventListener('click', logout)
 
 $('accountBtn').addEventListener('click', (e) => {

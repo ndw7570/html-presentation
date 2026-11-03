@@ -556,6 +556,17 @@ app.put('/api/state/:id', requireLoginOrToken, async (req, res, next) => {
   }
 })
 
+// 맨 처음 상태로. 저장 자리가 자료당 하나라 **모두에게** 되돌아간다.
+app.delete('/api/state/:id', requireLoginOrToken, async (req, res, next) => {
+  try {
+    if (!withPost(req, res)) return
+    await store.removeState(req.params.id)
+    res.json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
 /**
  * 폴더를 어느 폴더 밑에 둘 수 있는지 본다. 클라이언트 말은 믿지 않는다.
  * 반환값: 쓸 수 있으면 `{ parentId }`, 아니면 `{ error }`.

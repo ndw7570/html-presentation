@@ -1076,6 +1076,7 @@ a.link-btn {
   .folder-more,
   .folder-select,
   #moreBtn,
+  #resetBtn,
   .notes textarea { display: none; }
 
   .notes-read { display: block; }
