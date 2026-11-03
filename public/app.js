@@ -35,6 +35,7 @@ const el = {
   moreBtn: $('moreBtn'),
   folderPop: $('folderPop'),
   folderShareToggle: $('folderShareToggle'),
+  folderShareFrom: $('folderShareFrom'),
   accountPop: $('accountPop'),
   toggleShare: $('toggleShare'),
   whoami: $('whoami'),
@@ -168,11 +169,15 @@ function folderGroup(folderId, name, depth = 0) {
 
   // 미분류는 이름을 바꾸거나 지울 대상이 아니다.
   if (folderId !== null) {
-    if (findFolder(folderId)?.shared) {
+    const owner = sharingFolder(folderId)
+    if (owner) {
+      const mine = owner.id === folderId
       const badge = document.createElement('span')
-      badge.className = 'share-badge'
-      badge.textContent = '공유'
-      badge.title = '이 폴더와 하위 발표를 링크로 볼 수 있습니다'
+      badge.className = `share-badge${mine ? '' : ' inherited'}`
+      badge.textContent = mine ? '공유' : '공유↑'
+      badge.title = mine
+        ? '이 폴더와 하위 전체를 링크로 볼 수 있습니다'
+        : `상위 "${folderPath(owner.id)}" 를 통해 공유되고 있습니다`
       toggle.append(badge)
     }
     const more = document.createElement('button')
@@ -490,7 +495,9 @@ function openPicker(mode) {
 
 /* ---------- 폴더 동작 ---------- */
 
-async function createFolder(parentId = null) {
+async function createFolder(rawParentId = null) {
+  // id 가 아닌 것(클릭 이벤트 등)이 들어오면 맨 위로 친다. 한 번 당한 자리다.
+  const parentId = typeof rawParentId === 'string' && rawParentId ? rawParentId : null
   const where = parentId ? `"${folderPath(parentId)}" 아래에 만들 폴더 이름` : '새 폴더 이름'
   const name = window.prompt(where)
   if (name === null || !name.trim()) return
@@ -544,14 +551,36 @@ async function deleteFolder(id) {
 const folderShareUrl = (folder) => `${location.origin}/f/${folder.shareToken}`
 const findFolder = (id) => state.folders.find((f) => f.id === id)
 
+/**
+ * 이 폴더를 실제로 열어 주고 있는 폴더. 자기 자신일 수도, 위쪽 조상일 수도 있다.
+ *
+ * 폴더를 공유하면 그 아래가 통째로 열린다(서버가 subtree 로 판단한다).
+ * 그런데 하위 폴더의 `shared` 는 false 로 남아서, 화면만 보면 안 열린 것처럼 보인다.
+ * 그 거짓말을 막으려고 조상을 거슬러 올라가 찾는다.
+ */
+function sharingFolder(id) {
+  for (let at = id; at; ) {
+    const folder = findFolder(at)
+    if (!folder) return null
+    if (folder.shared) return folder
+    at = folder.parentId ?? null
+  }
+  return null
+}
+
 function copyFolderShareLink(id) {
-  const folder = findFolder(id)
-  if (!folder) return
-  if (!folder.shared) {
+  // 자기가 꺼져 있어도 위에서 열어 주고 있으면 그 링크를 준다.
+  // "꺼져 있습니다" 만 띄우면, 실제로는 열려 있는데 길을 못 찾는다.
+  const owner = sharingFolder(id)
+  if (!owner) {
     return toast('이 폴더는 공유가 꺼져 있습니다. ··· 에서 켜세요.', 'error')
   }
-  const count = postsInSubtree(id).length
-  copyText(folderShareUrl(folder), `폴더 공유 링크 복사 — 발표 ${count}개가 열립니다.`)
+  const count = postsInSubtree(owner.id).length
+  const where =
+    owner.id === id
+      ? `발표 ${count}개가 열립니다.`
+      : `상위 "${folderPath(owner.id)}" 의 링크입니다 — 그 폴더 전체(발표 ${count}개)가 열립니다.`
+  copyText(folderShareUrl(owner), `폴더 공유 링크 복사 — ${where}`)
 }
 
 async function toggleFolderShare(id) {
@@ -827,9 +856,14 @@ el.list.addEventListener('click', (e) => {
   if (more) {
     e.stopPropagation()
     state.menuFolderId = more.dataset.folderMore
-    el.folderShareToggle.textContent = findFolder(state.menuFolderId)?.shared
-      ? '폴더 공유 끄기'
-      : '폴더 공유 켜기'
+    const folder = findFolder(state.menuFolderId)
+    const owner = sharingFolder(state.menuFolderId)
+    el.folderShareToggle.textContent = folder?.shared ? '폴더 공유 끄기' : '폴더 공유 켜기'
+    // 위에서 열어 주고 있으면 그 사실을 적는다. 안 적으면 "꺼짐" 으로 읽힌다.
+    el.folderShareFrom.hidden = !owner || owner.id === state.menuFolderId
+    if (!el.folderShareFrom.hidden) {
+      el.folderShareFrom.textContent = `↑ "${folderPath(owner.id)}" 를 통해 공유 중`
+    }
     const box = more.getBoundingClientRect()
     el.folderPop.style.left = `${box.left}px`
     el.folderPop.style.top = `${box.bottom + 4}px`
@@ -974,7 +1008,8 @@ el.notesBtn.addEventListener('click', toggleNotes)
 el.notesBox.addEventListener('input', queueNotesSave)
 
 $('newBtn').addEventListener('click', () => openPicker('create'))
-$('newFolderBtn').addEventListener('click', createFolder)
+// 함수를 그대로 넘기면 클릭 이벤트가 첫 인자(parentId) 자리로 들어간다.
+$('newFolderBtn').addEventListener('click', () => createFolder(null))
 $('emptyBtn').addEventListener('click', () => openPicker('create'))
 $('presentBtn').addEventListener('click', present)
 $('shareBtn').addEventListener('click', copyShareLink)
