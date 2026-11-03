@@ -647,7 +647,8 @@ async function insertBeside(dragId, kind, plan) {
   const anchor = isFolder
     ? state.folders.find((f) => f.id === anchorId)
     : state.posts.find((p) => p.id === anchorId)
-  if (!anchor) return
+  // 조용히 끝내면 "끌었는데 아무 일도 안 난다" 가 된다. 한 번 그렇게 당했다.
+  if (!anchor) return toast('여기에는 놓을 수 없습니다.', 'error')
 
   const container = isFolder ? (anchor.parentId ?? null) : (anchor.folderId ?? null)
   const current = isFolder
@@ -931,17 +932,26 @@ function dropPlan(e) {
 
   const item = e.target.closest('.post-item')
   if (item) {
+    // 폴더를 글 위에 놓는 건 뜻이 모호하다. 받지 않는다.
+    if (dragging === 'folder') return null
     const box = item.getBoundingClientRect()
     return { dragging, mode: 'insert', el: item, after: e.clientY > box.top + box.height / 2 }
   }
 
   const head = e.target.closest('.folder-head')
   if (!head) return null
+  const isUnfiled = !head.closest('.folder').dataset.folderId
+
+  // 글은 폴더 이름 **어디에 놓든** 그 폴더로 옮긴다. 미분류도 마찬가지다.
+  // 글은 폴더 안에 사는 것이라 폴더 머리글과 차례를 다툴 일이 없다.
+  if (dragging === 'post') return { dragging, mode: 'into', el: head }
+
+  // 폴더끼리는 가른다 — 한가운데는 안으로, 가장자리는 차례 바꾸기.
+  // 미분류는 폴더가 아니라서 둘 다 해당이 없다.
+  if (isUnfiled) return null
   const box = head.getBoundingClientRect()
   const ratio = (e.clientY - box.top) / box.height
-  // 미분류는 들어갈 수 있는 폴더가 아니지만, 그 앞에 끼워 넣을 수는 있다.
-  const isUnfiled = !head.closest('.folder').dataset.folderId
-  if (!isUnfiled && ratio > EDGE && ratio < 1 - EDGE) return { dragging, mode: 'into', el: head }
+  if (ratio > EDGE && ratio < 1 - EDGE) return { dragging, mode: 'into', el: head }
   return { dragging, mode: 'insert', el: head, after: ratio >= 0.5 }
 }
 
