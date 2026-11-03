@@ -773,7 +773,18 @@ app.get(['/', '/index.html'], (req, res, next) => {
   next()
 })
 
-app.use(express.static(PUBLIC_DIR, { index: 'index.html' }))
+app.use(
+  express.static(PUBLIC_DIR, {
+    index: 'index.html',
+    setHeaders(res, filePath) {
+      const name = path.basename(filePath)
+      // .json 으로 나가면 크롬이 매니페스트로 안 읽어 설치가 안 뜬다.
+      if (name === 'manifest.json') res.type('application/manifest+json')
+      // 워커는 브라우저가 들고 있는 쪽을 먼저 믿는다. 고친 게 안 먹는 자리라 못박는다.
+      if (name === 'sw.js') res.set('Cache-Control', 'no-cache')
+    },
+  }),
+)
 
 app.use((err, req, res, next) => {
   console.error(err)
