@@ -491,11 +491,12 @@ function relativePath(folderId, rootId) {
 app.get('/f/:token', (req, res) => {
   const folder = withSharedFolder(req, res)
   if (!folder) return
-  const entries = store
-    .postsInSubtree(folder.id)
-    .map((post) => ({ post, path: relativePath(post.folderId, folder.id) }))
+  // 폴더별로 묶어서 넘긴다. 통째로 평평하게 펴면 폴더마다 따로 매긴 차례가 섞인다.
+  const groups = store
+    .orderedSubtree(folder.id)
+    .map(({ folderId, posts }) => ({ path: relativePath(folderId, folder.id), posts }))
   res.set({ 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' })
-  res.type('html').send(folderSharePage(folder, entries))
+  res.type('html').send(folderSharePage(folder, groups))
 })
 
 /**
