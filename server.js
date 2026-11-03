@@ -125,6 +125,11 @@ const app = express()
 app.disable('x-powered-by')
 app.use(express.json({ limit: MAX_UPLOAD }))
 
+// 요청 하나당 딱 한 번만 맞춘다. 중간에 또 읽으면 한 응답 안에서 목록이 달라진다.
+app.use((req, res, next) => {
+  store.sync().then(() => next(), next)
+})
+
 /* ---------- 인증 ---------- */
 
 function requireLogin(req, res, next) {
