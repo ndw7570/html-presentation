@@ -295,6 +295,12 @@ kbd {
 
 .link-btn:hover { color: #fff; }
 
+/* 사이드바 아래 링크는 a 와 button 이 섞인다. 둘이 같아 보여야 한다. */
+a.link-btn {
+  flex: 0 0 auto;
+  line-height: inherit;
+}
+
 .share-badge {
   padding: 1px 6px;
   border-radius: 999px;
@@ -876,6 +882,21 @@ kbd {
 .empty-card p {
   margin: 0 0 18px;
   color: var(--ink-soft);
+}
+
+/* 드래그가 안 되는 상황(AI·스크립트)에서 갈 곳을 같은 자리에 둔다. */
+.empty-alt {
+  margin: 16px 0 0 !important;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.empty-alt a { color: var(--accent); }
+
+.card .opt {
+  font-weight: 400;
+  opacity: .75;
 }
 
 /* ---------- 드롭 오버레이 ---------- */

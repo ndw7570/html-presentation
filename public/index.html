@@ -30,6 +30,7 @@
       <div class="keys"><kbd>/</kbd> 검색 · <kbd>N</kbd> 올리기 · <kbd>F</kbd> 발표</div>
       <div class="account">
         <span id="whoami"></span>
+        <a class="link-btn" href="/tokens">API 토큰</a>
         <button class="link-btn" id="accountBtn">계정</button>
         <button class="link-btn" id="logoutBtn">로그아웃</button>
       </div>
@@ -103,6 +104,9 @@
           화면 어디에 놓아도 됩니다. 제목은 파일에서 자동으로 가져옵니다.
         </p>
         <button class="btn primary" id="emptyBtn">파일 고르기</button>
+        <p class="empty-alt">
+          AI 나 스크립트로 올리려면 <a href="/tokens">API 토큰</a> 을 발급하세요.
+        </p>
       </div>
     </div>
   </main>
@@ -124,8 +128,6 @@
   <button data-action="add-user">계정 추가</button>
   <button data-action="change-password">내 비밀번호 바꾸기</button>
   <button data-action="list-users">계정 목록</button>
-  <hr>
-  <button data-action="tokens">API 토큰 (AI 로 올리기)</button>
 </div>
 
 <div class="drop-overlay" id="dropOverlay" hidden>

@@ -910,7 +910,6 @@ el.accountPop.addEventListener('click', (e) => {
   if (action === 'add-user') addUser()
   if (action === 'change-password') changePassword()
   if (action === 'list-users') listUsers()
-  if (action === 'tokens') location.href = '/tokens'
 })
 
 el.picker.addEventListener('change', () => {
