@@ -365,9 +365,18 @@ a.link-btn {
 }
 
 .fshare-list header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 18px 18px 12px;
   border-bottom: 1px solid var(--panel-line);
 }
+
+/* 폴더 이름이 길어도 나가기 단추를 밀어내지 않는다. */
+.fshare-head-text { flex: 1; min-width: 0; }
+
+.fshare-list header h1,
+.fshare-list header p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .fshare-list h1 {
   margin: 0;
@@ -1156,3 +1165,15 @@ a.link-btn {
 }
 
 .login-back:hover { color: #aab0bb; }
+
+/* 어두운 목록 머리글 위에서는 흰 단추가 폴더 이름보다 더 크게 보인다. 낮춰 둔다. */
+.fshare-list header .btn {
+  border-color: var(--panel-line);
+  background: transparent;
+  color: #aab0bb;
+}
+
+.fshare-list header .btn:hover {
+  border-color: var(--accent);
+  color: #e6e8ec;
+}

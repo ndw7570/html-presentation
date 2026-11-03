@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import * as store from './lib/store.js'
 import * as users from './lib/users.js'
 import * as session from './lib/session.js'
+import * as linkCookie from './lib/link-cookie.js'
 import { extractTitle, normalizeLabel, ensureCharset, injectHead } from './lib/html.js'
 import { bridgeScript } from './lib/bridge.js'
 import { scanStorageUse } from './lib/storage-scan.js'
@@ -189,6 +190,12 @@ app.post('/api/login', async (req, res, next) => {
 
 app.post('/api/logout', (req, res) => {
   session.clear(res)
+  res.json({ ok: true })
+})
+
+// 기억해 둔 공유 주소를 잊는다. 로그아웃의 공유 주소 판이다.
+app.post('/api/link-out', (req, res) => {
+  linkCookie.forget(res)
   res.json({ ok: true })
 })
 
@@ -421,6 +428,7 @@ function withSharedPost(req, res) {
 app.get('/s/:token', (req, res) => {
   const post = withSharedPost(req, res)
   if (!post) return
+  linkCookie.remember(res, 's', post.shareToken, SECURE_COOKIE)
   res.set({ 'Cache-Control': 'no-cache', 'X-Robots-Tag': 'noindex, nofollow' })
   res.type('html').send(sharePage(post))
 })
@@ -465,6 +473,7 @@ function relativePath(folderId, rootId) {
 app.get('/f/:token', (req, res) => {
   const folder = withSharedFolder(req, res)
   if (!folder) return
+  linkCookie.remember(res, 'f', folder.shareToken, SECURE_COOKIE)
   // 폴더별로 묶어서 넘긴다. 통째로 평평하게 펴면 폴더마다 따로 매긴 차례가 섞인다.
   const groups = store
     .orderedSubtree(folder.id)
@@ -774,8 +783,19 @@ app.get(['/tokens', '/tokens.html'], (req, res) => {
  * 대부분은 계정이 없다. 로그인은 거기서 눌러서 간다.
  */
 app.get(['/', '/index.html'], (req, res, next) => {
-  if (!session.read(req)) return res.sendFile(path.join(PUBLIC_DIR, 'home.html'))
-  next()
+  if (session.read(req)) return next()
+
+  // 링크로 들어왔던 사람은 껐다 켜도 그 자리로 돌아온다.
+  // 공유가 꺼졌거나 지워졌으면 쿠키를 버린다 - 안 그러면 404 로만 돌게 된다.
+  const link = linkCookie.read(req)
+  if (link) {
+    const alive =
+      link.kind === 's' ? store.getShared(link.token) : store.getSharedFolder(link.token)
+    if (alive) return res.redirect(`/${link.kind}/${link.token}`)
+    linkCookie.forget(res)
+  }
+
+  res.sendFile(path.join(PUBLIC_DIR, 'home.html'))
 })
 
 app.use(
