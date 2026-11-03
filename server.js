@@ -12,7 +12,7 @@ import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
 import { folderSharePage, noPreviewPage } from './lib/folder-share-page.js'
 import { drawioPage } from './lib/drawio-page.js'
-import { apiGuide, briefText } from './lib/api-guide.js'
+import { apiGuide, briefText, authoringText } from './lib/api-guide.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(__dirname, 'public')
@@ -272,6 +272,14 @@ app.get('/api', async (req, res, next) => {
   } catch (err) {
     next(err)
   }
+})
+
+/**
+ * 자료를 만들 때 지킬 것. 토큰 없이도 읽힌다 —
+ * 발표 자료를 만드는 쪽과 올리는 쪽이 다른 사람일 수 있다.
+ */
+app.get('/api/authoring', (req, res) => {
+  res.type('text/plain; charset=utf-8').send(authoringText())
 })
 
 /* ---------- API 토큰 ---------- */

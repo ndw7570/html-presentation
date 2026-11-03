@@ -55,6 +55,18 @@
   </section>
 
   <section class="card">
+    <h2>AI 에게 줄 자료 작성 규칙</h2>
+    <p class="muted">
+      토큰과 무관합니다. 발표 자료를 <b>만들게</b> 할 때 이것만 먼저 붙여 넣어도 됩니다.
+      인터넷 없는 사내망이나 내려받아 연 파일에서 화면이 깨지는 것을 막아 줍니다.
+    </p>
+    <div class="copy-row">
+      <button class="btn" data-copy="rulesBox">전체 복사</button>
+    </div>
+    <textarea id="rulesBox" readonly rows="16"></textarea>
+  </section>
+
+  <section class="card">
     <h2>발급해 둔 토큰</h2>
     <div id="list" class="token-list"></div>
   </section>
@@ -165,7 +177,17 @@ $('form').addEventListener('submit', async (e) => {
   }
 })
 
+async function loadRules() {
+  try {
+    const res = await fetch('/api/authoring')
+    $('rulesBox').value = await res.text()
+  } catch {
+    $('rulesBox').value = '규칙을 불러오지 못했습니다. 새로 고쳐 보세요.'
+  }
+}
+
 renderList()
+loadRules()
 </script>
 </body>
 </html>
