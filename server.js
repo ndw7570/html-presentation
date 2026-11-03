@@ -12,6 +12,7 @@ import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
 import { folderSharePage, noPreviewPage } from './lib/folder-share-page.js'
 import { drawioPage } from './lib/drawio-page.js'
+import { apiGuide } from './lib/api-guide.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(__dirname, 'public')
@@ -238,6 +239,41 @@ app.delete('/api/users/:username', requireLogin, async (req, res, next) => {
   }
 })
 
+/* ---------- API 사용 설명 ---------- */
+
+/** 폴더를 "제품 기획 / 2026" 같은 전체 경로로 펴 준다. */
+function folderPaths() {
+  const name = (id) => store.getFolder(id)?.name ?? ''
+  return store.listFolders().map((folder) => {
+    const parts = []
+    for (let at = folder.id; at; at = store.getFolder(at)?.parentId ?? null) parts.unshift(name(at))
+    return { id: folder.id, path: parts.join(' / ') }
+  })
+}
+
+/**
+ * 토큰이 있으면 폴더 목록까지 준다. 없으면 모양만.
+ * 폴더 이름은 데이터라 아무에게나 보여 주지 않는다.
+ */
+app.get('/api', async (req, res, next) => {
+  try {
+    const header = req.get('authorization') ?? ''
+    const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+    const known = Boolean(session.read(req) || (token && (await users.userForToken(token))))
+    res.json(
+      apiGuide({
+        origin: `${req.protocol}://${req.get('host')}`,
+        folders: known ? folderPaths() : null,
+        maxUpload: MAX_UPLOAD,
+        maxStateKB: store.MAX_STATE_BYTES / 1024,
+        folderDepth: store.MAX_FOLDER_DEPTH,
+      }),
+    )
+  } catch (err) {
+    next(err)
+  }
+})
+
 /* ---------- API 토큰 ---------- */
 
 app.get('/api/tokens', requireLogin, async (req, res, next) => {
@@ -290,6 +326,34 @@ function withPost(req, res) {
  * 글이 가리키는 폴더가 실제로 있는지 본다.
  * 반환값: 유효하면 폴더 id(또는 미분류를 뜻하는 null), 잘못됐으면 undefined.
  */
+/**
+ * "제품 기획/2026 Q1" 같은 경로를 폴더 id 로 바꾼다. 없는 단계는 만든다.
+ *
+ * AI 에게 "어느 폴더에 넣어라" 라고 말로 시킬 때 id 를 알 리가 없다.
+ * 이름으로 지정할 수 있어야 그 지시가 그대로 먹는다.
+ *
+ * 반환값: `{ folderId }` 또는 `{ error }`.
+ */
+async function resolveFolderPath(raw) {
+  const names = String(raw)
+    .split('/')
+    .map((part) => normalizeLabel(part, ''))
+    .filter(Boolean)
+  if (!names.length) return { folderId: null }
+  if (names.length > store.MAX_FOLDER_DEPTH) {
+    return { error: `폴더는 ${store.MAX_FOLDER_DEPTH}단까지만 만들 수 있습니다.` }
+  }
+
+  let parentId = null
+  for (const name of names) {
+    const found = store
+      .listFolders()
+      .find((f) => (f.parentId ?? null) === parentId && f.name === name)
+    parentId = found ? found.id : (await store.createFolder(name, parentId)).id
+  }
+  return { folderId: parentId }
+}
+
 function resolveFolderId(value) {
   if (value === null || value === undefined || value === '') return null
   return store.isValidId(value) && store.getFolder(value) ? value : undefined
@@ -541,9 +605,18 @@ app.delete('/api/folders/:id', requireLogin, async (req, res, next) => {
 
 app.post('/api/posts', requireLoginOrToken, async (req, res, next) => {
   try {
-    const { title, html, filename, folderId } = req.body ?? {}
-    const folder = resolveFolderId(folderId)
-    if (folder === undefined) return res.status(400).json({ error: '없는 폴더입니다.' })
+    const { title, html, filename, folderId, folderPath } = req.body ?? {}
+
+    // 이름으로 준 쪽이 우선이다. AI 는 보통 이쪽만 쓴다.
+    let folder
+    if (typeof folderPath === 'string') {
+      const resolved = await resolveFolderPath(folderPath)
+      if (resolved.error) return res.status(400).json({ error: resolved.error })
+      folder = resolved.folderId
+    } else {
+      folder = resolveFolderId(folderId)
+      if (folder === undefined) return res.status(400).json({ error: '없는 폴더입니다.' })
+    }
 
     const prepared = prepareUpload(html, filename)
     if (prepared.error) return res.status(400).json({ error: prepared.error })
@@ -575,7 +648,11 @@ app.patch('/api/posts/:id', requireLoginOrToken, async (req, res, next) => {
       patch.source = prepared.source
       patch.storage = prepared.scan ?? []
     }
-    if (folderId !== undefined) {
+    if (typeof req.body?.folderPath === 'string') {
+      const resolved = await resolveFolderPath(req.body.folderPath)
+      if (resolved.error) return res.status(400).json({ error: resolved.error })
+      patch.folderId = resolved.folderId
+    } else if (folderId !== undefined) {
       const folder = resolveFolderId(folderId)
       if (folder === undefined) return res.status(400).json({ error: '없는 폴더입니다.' })
       patch.folderId = folder

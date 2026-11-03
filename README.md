@@ -168,14 +168,29 @@ AI 에게 "체크 상태를 localStorage 에 저장해줘" 라고만 하면 그�
 사람 없이 올리려면 토큰을 쓴다. 사이드바 아래 `계정` → **API 토큰 발급**.
 **발급할 때 한 번만 보인다.** 서버도 해시만 들고 있어 다시 꺼낼 수 없다.
 
+### AI 에게는 주소 하나만 주면 된다
+
+```
+http://서버/api
+```
+
+이 주소가 **쓰는 법을 JSON 으로 돌려준다.** 토큰을 붙이면 지금 있는 폴더 목록까지 준다.
+AI 에게 "이 주소를 먼저 읽고, 거기 적힌 대로 올려" 라고만 하면 된다.
+
+### 폴더는 이름으로 지정한다
+
+`folderPath` 에 `"제품 기획/2026 Q1"` 처럼 주면 **없는 폴더는 만들어 준다.**
+id 를 알 필요가 없으므로 "어느 폴더에 넣어라" 는 지시가 그대로 먹는다.
+이미 있으면 그걸 쓴다 — 같은 경로로 여러 번 올려도 폴더가 늘지 않는다.
+
 ```bash
-curl -X POST http://서버/api/posts   -H "Authorization: Bearer deck_xxxxx"   -H "Content-Type: application/json"   -d '{"html":"<h1>안녕</h1>","filename":"a.html","folderId":null}'
+curl -X POST http://서버/api/posts   -H "Authorization: Bearer deck_xxxxx"   -H "Content-Type: application/json"   -d '{"html":"<h1>안녕</h1>","filename":"a.html","folderPath":"제품 기획/2026 Q1"}'
 
 # 자료의 상태를 직접 써 넣기
 curl -X PUT http://서버/api/state/<글id>   -H "Authorization: Bearer deck_xxxxx"   -H "Content-Type: application/json"   -d '{"state":{"chk0":"1"}}'
 ```
 
-토큰이 먹는 곳: `GET /api/posts`, `POST /api/posts`, `PATCH /api/posts/:id`,
+토큰이 먹는 곳: `GET /api`, `GET /api/posts`, `POST /api/posts`, `PATCH /api/posts/:id`,
 `POST /api/folders`, `GET|PUT /api/state/:id`.
 계정·토큰 관리는 **브라우저 로그인만** 받는다 — 토큰으로 토큰을 만들 수는 없다.
 
@@ -369,6 +384,7 @@ Restart=always
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
+| `GET` | `/api` | **쓰는 법 안내.** 토큰을 주면 폴더 목록까지 |
 | `GET` | `/api/health` | 살아 있는지 + 계정 수 |
 | `GET` | `/api/me` | 지금 로그인한 아이디 (없으면 `null`) |
 | `POST` | `/api/login` | `{username, password}` |
@@ -379,8 +395,9 @@ Restart=always
 | `GET` | `/f/:token/:postId/raw` | 공유 폴더 안의 발표 본문 |
 | `GET` | `/f/:token/:postId/download` | 공유 폴더 안의 원본 내려받기 |
 | `GET` | `/api/posts` | 폴더 + 글 목록 — 로그인 필요 |
-| `POST` | `/api/posts` | 등록 `{html, filename?, title?, folderId?}` — 로그인 필요 |
-| | | `.pdf` 는 `html` 에 **base64** 를 넣는다 |
+| `POST` | `/api/posts` | 등록 `{html, filename?, title?, folderPath?, folderId?}` — 로그인/토큰 |
+| | | `.pdf`·`.png` 는 `html` 에 **base64** 를 넣는다 |
+| | | `folderPath` 는 없는 폴더를 만들어 준다. `folderId` 보다 우선 |
 | `PATCH` | `/api/posts/:id` | `{title?, html?, filename?, folderId?, shared?}` — 로그인 필요 |
 | `POST` | `/api/posts/:id/share-token` | 공유 주소 재발급 — 로그인 필요 |
 | `DELETE` | `/api/posts/:id` | 삭제 — 로그인 필요 |
@@ -406,6 +423,7 @@ lib/html.js          HTML 제목 추출, charset 보강
 lib/markdown.js      마크다운 -> HTML (문서 / 슬라이드)
 lib/bridge.js        자료 안에 끼워 넣는 코드 (localStorage -> 서버 저장)
 lib/storage-scan.js  올린 자료가 쓰는 저장 수단 훑기
+lib/api-guide.js     GET /api 가 돌려주는 사용 설명
 lib/users.js         계정 (scrypt 해시)
 lib/session.js       서명 쿠키 세션
 lib/share-page.js    발표 하나를 보여주는 읽기 전용 화면
