@@ -316,6 +316,37 @@ app.post('/api/tokens', requireLogin, async (req, res, next) => {
   }
 })
 
+/**
+ * 이미 가진 토큰으로 안내문을 다시 만든다.
+ *
+ * 서버에는 토큰 해시만 있어 값을 꺼내 줄 수 없다. 그래서 **가진 값을 받아서**
+ * 안내문을 짜 준다 — 새 대화를 시작할 때마다 토큰을 새로 발급하지 않아도 된다.
+ * 확인하는 김에 아직 쓸 수 있는 토큰인지도 알려 준다.
+ */
+app.post('/api/brief', requireLogin, async (req, res, next) => {
+  try {
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : ''
+    const owner = token ? await users.userForToken(token) : null
+    if (owner !== req.username) {
+      // 남의 토큰인지 만료된 것인지 구분해 주지 않는다. 둘 다 "못 쓴다" 로 충분하다.
+      return res.status(400).json({ error: '쓸 수 없는 토큰입니다. 만료됐거나 지워진 값입니다.' })
+    }
+    const mine = (await users.listTokens(req.username)).find((t) => token.startsWith(t.hint))
+    res.json({
+      label: mine?.label ?? '',
+      expiresAt: mine?.expiresAt ?? null,
+      brief: briefText({
+        origin: `${req.protocol}://${req.get('host')}`,
+        token,
+        folders: folderPaths(),
+        expiresAt: mine?.expiresAt ?? null,
+      }),
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
 app.delete('/api/tokens/:id', requireLogin, async (req, res, next) => {
   try {
     if (!(await users.removeToken(req.username, req.params.id))) {
