@@ -546,6 +546,34 @@ a.link-btn {
   font-size: 14px;
 }
 
+/* 접이식 카드. summary 가 머리글 겸 버튼 줄이 된다. */
+.fold > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fold > summary::-webkit-details-marker { display: none; }
+
+.fold > summary > span::before {
+  content: '▶';
+  display: inline-block;
+  width: 14px;
+  font-size: 9px;
+  color: var(--ink-soft);
+}
+
+.fold[open] > summary > span::before { content: '▼'; }
+.fold[open] > summary { margin-bottom: 12px; }
+
+/* 복사 버튼을 누를 때 접히거나 펴지면 안 된다. */
+.fold > summary .btn { cursor: pointer; }
+
 .card.issued {
   border-color: var(--accent);
   box-shadow: 0 6px 24px rgba(59, 108, 246, .12);
