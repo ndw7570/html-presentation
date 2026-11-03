@@ -12,7 +12,7 @@ import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
 import { folderSharePage, noPreviewPage } from './lib/folder-share-page.js'
 import { drawioPage } from './lib/drawio-page.js'
-import { apiGuide } from './lib/api-guide.js'
+import { apiGuide, briefText } from './lib/api-guide.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.join(__dirname, 'public')
@@ -286,10 +286,23 @@ app.get('/api/tokens', requireLogin, async (req, res, next) => {
 
 app.post('/api/tokens', requireLogin, async (req, res, next) => {
   try {
-    const token = await users.createToken(req.username, normalizeLabel(req.body?.label, ''))
+    const days = Number(req.body?.days) || 0
+    const token = await users.createToken(req.username, normalizeLabel(req.body?.label, ''), days)
     if (!token) return res.status(404).json({ error: '없는 계정입니다.' })
+
+    const issued = (await users.listTokens(req.username)).at(-1)
     // 평문은 지금 한 번만 나간다. 우리도 다시 꺼낼 수 없다.
-    res.status(201).json({ token })
+    // 그래서 AI 에게 붙여 넣을 문구도 여기서 같이 만들어 보낸다.
+    res.status(201).json({
+      token,
+      expiresAt: issued?.expiresAt ?? null,
+      brief: briefText({
+        origin: `${req.protocol}://${req.get('host')}`,
+        token,
+        folders: folderPaths(),
+        expiresAt: issued?.expiresAt ?? null,
+      }),
+    })
   } catch (err) {
     next(err)
   }
@@ -714,6 +727,11 @@ app.get('/download/:id', requireLogin, async (req, res, next) => {
 /* ---------- 화면 ---------- */
 
 app.get('/login', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'login.html')))
+
+app.get(['/tokens', '/tokens.html'], (req, res) => {
+  if (!session.read(req)) return res.redirect('/login')
+  res.sendFile(path.join(PUBLIC_DIR, 'tokens.html'))
+})
 
 // 로그인 전에는 게시판 화면 자체를 내려 주지 않는다.
 // '/' 만 막으면 /index.html 로 그대로 받아 갈 수 있어 둘 다 건다.

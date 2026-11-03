@@ -767,41 +767,6 @@ async function listUsers() {
   }
 }
 
-async function newToken() {
-  const label = window.prompt('토큰 이름 (어디에 쓰는 것인지)')
-  if (label === null) return
-  try {
-    const { token } = await api('POST', '/api/tokens', { label })
-    // 평문은 지금 한 번만 볼 수 있다. 서버도 해시만 들고 있다.
-    window.prompt(
-      '이 토큰은 지금만 보입니다. 복사해서 안전한 곳에 두세요.\n' +
-        '쓸 때: Authorization: Bearer <토큰>',
-      token,
-    )
-  } catch (err) {
-    toast(err.message, 'error')
-  }
-}
-
-async function listTokens() {
-  try {
-    const { tokens } = await api('GET', '/api/tokens')
-    if (!tokens.length) return toast('발급한 토큰이 없습니다.')
-    const lines = tokens.map((t) => `· ${t.label} — ${t.hint}…  (${t.createdAt.slice(0, 10)})`)
-    const kill = window.prompt(
-      `토큰 ${tokens.length}개\n\n${lines.join('\n')}\n\n` +
-        '지우려면 이름을 그대로 입력하세요. 그냥 닫으려면 취소.',
-    )
-    if (!kill) return
-    const target = tokens.find((t) => t.label === kill.trim())
-    if (!target) return toast('그 이름의 토큰이 없습니다.', 'error')
-    await api('DELETE', `/api/tokens/${target.id}`)
-    toast(`"${target.label}" 토큰을 지웠습니다.`)
-  } catch (err) {
-    toast(err.message, 'error')
-  }
-}
-
 async function logout() {
   await api('POST', '/api/logout').catch(() => {})
   location.replace('/login')
@@ -945,8 +910,7 @@ el.accountPop.addEventListener('click', (e) => {
   if (action === 'add-user') addUser()
   if (action === 'change-password') changePassword()
   if (action === 'list-users') listUsers()
-  if (action === 'new-token') newToken()
-  if (action === 'list-tokens') listTokens()
+  if (action === 'tokens') location.href = '/tokens'
 })
 
 el.picker.addEventListener('change', () => {

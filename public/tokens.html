@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>API 토큰 — 발표 게시판</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="page-body">
+
+<main class="page">
+  <header class="page-head">
+    <a class="btn" href="/">← 게시판</a>
+    <h1>API 토큰</h1>
+  </header>
+
+  <p class="page-lead">
+    AI 나 스크립트가 <b>사람 없이</b> 자료를 올릴 때 쓰는 열쇠입니다.
+    발급하면 <b>그 자리에서 한 번만</b> 보입니다 — 서버도 해시만 들고 있어 다시 꺼낼 수 없습니다.
+  </p>
+
+  <section class="card">
+    <h2>새 토큰 발급</h2>
+    <form id="form">
+      <label for="label">어디에 쓰나요</label>
+      <input id="label" placeholder="예: 내 AI 비서" required>
+
+      <label for="days">유효 기간</label>
+      <select id="days">
+        <option value="7">7일 (추천)</option>
+        <option value="1">1일</option>
+        <option value="30">30일</option>
+        <option value="0">만료 없음</option>
+      </select>
+
+      <button class="btn primary" id="submit" type="submit">발급</button>
+    </form>
+  </section>
+
+  <section class="card issued" id="issued" hidden>
+    <h2>발급됐습니다 — 이 화면을 닫으면 다시 못 봅니다</h2>
+
+    <label>토큰</label>
+    <div class="copy-row">
+      <input id="tokenBox" readonly>
+      <button class="btn" data-copy="tokenBox">복사</button>
+    </div>
+
+    <label>AI 에게 통째로 붙여 넣을 문구</label>
+    <div class="copy-row">
+      <button class="btn primary" data-copy="briefBox">전체 복사</button>
+    </div>
+    <textarea id="briefBox" readonly rows="22"></textarea>
+  </section>
+
+  <section class="card">
+    <h2>발급해 둔 토큰</h2>
+    <div id="list" class="token-list"></div>
+  </section>
+</main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id)
+
+function toast(message, kind = '') {
+  const node = document.createElement('div')
+  node.className = `toast ${kind}`.trim()
+  node.textContent = message
+  $('toasts').append(node)
+  setTimeout(() => node.remove(), 3200)
+}
+
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    if (res.status === 401) location.replace('/login')
+    throw new Error(data.error || `요청 실패 (${res.status})`)
+  }
+  return data
+}
+
+// 사내 서버가 http 면 clipboard API 가 막힌다. 그때는 선택만 해 준다.
+function copyFrom(id) {
+  const box = $(id)
+  box.select()
+  const done = () => toast('복사했습니다.')
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(box.value).then(done, () => {
+      document.execCommand('copy') ? done() : toast('직접 복사하세요 (Ctrl+C)', 'error')
+    })
+  } else {
+    document.execCommand('copy') ? done() : toast('직접 복사하세요 (Ctrl+C)', 'error')
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const target = e.target.dataset?.copy
+  if (target) copyFrom(target)
+})
+
+function when(iso, expired) {
+  if (!iso) return '만료 없음'
+  return `${iso.slice(0, 10)} 까지${expired ? ' · 만료됨' : ''}`
+}
+
+async function renderList() {
+  const { tokens } = await api('GET', '/api/tokens')
+  const list = $('list')
+  list.replaceChildren()
+  if (!tokens.length) {
+    list.innerHTML = '<p class="muted">아직 발급한 토큰이 없습니다.</p>'
+    return
+  }
+  for (const t of tokens) {
+    const row = document.createElement('div')
+    row.className = `token-row${t.expired ? ' dim' : ''}`
+    const info = document.createElement('div')
+    info.innerHTML = `<strong></strong><span></span>`
+    info.querySelector('strong').textContent = t.label
+    info.querySelector('span').textContent = `${t.hint}…  ·  ${when(t.expiresAt, t.expired)}`
+    const kill = document.createElement('button')
+    kill.className = 'btn'
+    kill.textContent = '삭제'
+    kill.onclick = async () => {
+      if (!confirm(`"${t.label}" 토큰을 지웁니다. 이 토큰을 쓰던 쪽은 바로 막힙니다.`)) return
+      try {
+        await api('DELETE', `/api/tokens/${t.id}`)
+        toast('지웠습니다.')
+        renderList()
+      } catch (err) {
+        toast(err.message, 'error')
+      }
+    }
+    row.append(info, kill)
+    list.append(row)
+  }
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  $('submit').disabled = true
+  try {
+    const { token, brief } = await api('POST', '/api/tokens', {
+      label: $('label').value,
+      days: Number($('days').value),
+    })
+    $('tokenBox').value = token
+    $('briefBox').value = brief
+    $('issued').hidden = false
+    $('issued').scrollIntoView({ behavior: 'smooth', block: 'start' })
+    $('label').value = ''
+    renderList()
+  } catch (err) {
+    toast(err.message, 'error')
+  } finally {
+    $('submit').disabled = false
+  }
+})
+
+renderList()
+</script>
+</body>
+</html>
