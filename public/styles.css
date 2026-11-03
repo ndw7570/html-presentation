@@ -142,6 +142,27 @@ kbd {
   background: rgba(59, 108, 246, .18);
 }
 
+/* 사이에 끼워 넣을 자리를 선으로 보여 준다. 안으로 넣기(테두리)와 달라야 한다. */
+.insert-before,
+.insert-after {
+  position: relative;
+}
+
+.insert-before::before,
+.insert-after::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(59, 108, 246, .25);
+}
+
+.insert-before::before { top: -1px; }
+.insert-after::after { bottom: -1px; }
+
 .folder.active > .folder-head > .folder-toggle > strong { color: #fff; }
 
 .folder-toggle {

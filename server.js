@@ -680,6 +680,25 @@ app.patch('/api/posts/:id', requireLoginOrToken, async (req, res, next) => {
   }
 })
 
+/**
+ * 차례 바꾸기. 한 자리에 있는 것들의 id 를 보이는 순서대로 통째로 보낸다.
+ * 한 칸씩 주고받으면 중간에 끼어든 변경과 어긋난다 — 목록 전체를 받는 편이 안전하다.
+ */
+app.post('/api/reorder', requireLoginOrToken, async (req, res, next) => {
+  try {
+    const { kind, ids } = req.body ?? {}
+    if (kind !== 'post' && kind !== 'folder') {
+      return res.status(400).json({ error: "kind 는 'post' 또는 'folder' 여야 합니다." })
+    }
+    if (!Array.isArray(ids) || ids.some((id) => !store.isValidId(id))) {
+      return res.status(400).json({ error: 'ids 는 id 배열이어야 합니다.' })
+    }
+    res.json({ ok: true, moved: await store.reorder(kind, ids) })
+  } catch (err) {
+    next(err)
+  }
+})
+
 app.post('/api/posts/:id/share-token', requireLogin, async (req, res, next) => {
   try {
     if (!withPost(req, res)) return

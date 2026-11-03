@@ -601,6 +601,54 @@ function postsInSubtree(id) {
   return state.posts.filter((p) => ids.includes(p.folderId ?? null))
 }
 
+/**
+ * 끌어 온 것을 target 옆에 끼워 넣는다.
+ *
+ * 다른 자리로 건너온 경우(다른 폴더의 글, 다른 상위 폴더의 폴더)에는 **먼저 옮기고** 나서
+ * 차례를 매긴다. 안 그러면 그 자리에 없는 것의 순서를 보내게 된다.
+ */
+async function insertBeside(dragId, kind, plan) {
+  const targetId = plan.el.closest('.folder')?.dataset.folderId || null
+  const isFolder = kind === 'folder'
+
+  // 끼워 넣을 자리의 주인. 글이면 그 글이 든 폴더, 폴더면 그 폴더의 상위.
+  const anchorId = plan.el.classList.contains('post-item')
+    ? plan.el.dataset.id
+    : (targetId ?? null)
+  const anchor = isFolder
+    ? state.folders.find((f) => f.id === anchorId)
+    : state.posts.find((p) => p.id === anchorId)
+  if (!anchor) return
+
+  const container = isFolder ? (anchor.parentId ?? null) : (anchor.folderId ?? null)
+  const current = isFolder
+    ? state.folders.find((f) => f.id === dragId)
+    : state.posts.find((p) => p.id === dragId)
+  if (!current) return
+  if (isFolder && dragId === anchorId) return
+
+  const home = isFolder ? (current.parentId ?? null) : (current.folderId ?? null)
+
+  try {
+    if (home !== container) {
+      if (isFolder) await api('PATCH', `/api/folders/${dragId}`, { parentId: container })
+      else await api('PATCH', `/api/posts/${dragId}`, { folderId: container })
+      await refresh()
+    }
+
+    const siblings = (isFolder ? childFolders(container) : postsIn(container))
+      .map((x) => x.id)
+      .filter((id) => id !== dragId)
+    const at = siblings.indexOf(anchorId)
+    siblings.splice(at === -1 ? siblings.length : at + (plan.after ? 1 : 0), 0, dragId)
+
+    await api('POST', '/api/reorder', { kind, ids: siblings })
+    await refresh()
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
 async function moveFolder(id, parentId) {
   if (id === parentId) return
   try {
@@ -833,35 +881,74 @@ el.list.addEventListener('dragstart', (e) => {
   e.dataTransfer.effectAllowed = 'move'
 })
 
-el.list.addEventListener('dragover', (e) => {
-  const head = e.target.closest('.folder-head')
-  if (!head) return
+/*
+ * 끌어 놓을 때 두 가지를 해야 한다 — 폴더 **안으로** 넣기와 **사이에** 끼우기.
+ * 같은 화면에서 구분하려고 자리로 가른다:
+ *   폴더 이름 한가운데(위아래 30% 를 뺀 자리) → 그 폴더 안으로
+ *   그 밖의 모든 가장자리 → 그 자리에 끼워 넣기(순서 변경)
+ * 글 항목에는 안에 넣을 것이 없으니 언제나 순서 변경이다.
+ */
+const EDGE = 0.3
+
+function dropPlan(e) {
   const types = [...e.dataTransfer.types]
-  if (!types.includes(POST_MIME) && !types.includes(FOLDER_MIME)) return
+  const dragging = types.includes(POST_MIME) ? 'post' : types.includes(FOLDER_MIME) ? 'folder' : null
+  if (!dragging) return null
+
+  const item = e.target.closest('.post-item')
+  if (item) {
+    const box = item.getBoundingClientRect()
+    return { dragging, mode: 'insert', el: item, after: e.clientY > box.top + box.height / 2 }
+  }
+
+  const head = e.target.closest('.folder-head')
+  if (!head) return null
+  const box = head.getBoundingClientRect()
+  const ratio = (e.clientY - box.top) / box.height
+  // 미분류는 들어갈 수 있는 폴더가 아니지만, 그 앞에 끼워 넣을 수는 있다.
+  const isUnfiled = !head.closest('.folder').dataset.folderId
+  if (!isUnfiled && ratio > EDGE && ratio < 1 - EDGE) return { dragging, mode: 'into', el: head }
+  return { dragging, mode: 'insert', el: head, after: ratio >= 0.5 }
+}
+
+function clearDropMarks() {
+  for (const node of el.list.querySelectorAll('.drag-over, .insert-before, .insert-after')) {
+    node.classList.remove('drag-over', 'insert-before', 'insert-after')
+  }
+}
+
+el.list.addEventListener('dragover', (e) => {
+  const plan = dropPlan(e)
+  if (!plan) return
   e.preventDefault()
   e.dataTransfer.dropEffect = 'move'
-  head.classList.add('drag-over')
+  clearDropMarks()
+  if (plan.mode === 'into') plan.el.classList.add('drag-over')
+  else plan.el.classList.add(plan.after ? 'insert-after' : 'insert-before')
 })
 
 el.list.addEventListener('dragleave', (e) => {
-  e.target.closest('.folder-head')?.classList.remove('drag-over')
+  if (!el.list.contains(e.relatedTarget)) clearDropMarks()
 })
 
 el.list.addEventListener('drop', (e) => {
-  const head = e.target.closest('.folder-head')
-  if (!head) return
-  const postId = e.dataTransfer.getData(POST_MIME)
-  const folderId = e.dataTransfer.getData(FOLDER_MIME)
-  if (!postId && !folderId) return
-
+  const plan = dropPlan(e)
+  if (!plan) return
   e.preventDefault()
   e.stopPropagation()
-  head.classList.remove('drag-over')
+  clearDropMarks()
 
-  const target = head.closest('.folder').dataset.folderId || null
-  // 자기 자신이나 자손 안으로 넣는 것은 서버가 400 으로 막는다. 여기서는 그 응답을 보여만 준다.
-  if (postId) movePost(postId, target)
-  else moveFolder(folderId, target)
+  const postId = e.dataTransfer.getData(POST_MIME)
+  const folderId = e.dataTransfer.getData(FOLDER_MIME)
+
+  if (plan.mode === 'into') {
+    const target = plan.el.closest('.folder').dataset.folderId || null
+    // 자기 자신이나 자손 안으로 넣는 것은 서버가 400 으로 막는다. 여기서는 응답을 보여만 준다.
+    if (postId) movePost(postId, target)
+    else moveFolder(folderId, target)
+    return
+  }
+  insertBeside(postId || folderId, postId ? 'post' : 'folder', plan)
 })
 
 /* ---------- 나머지 이벤트 ---------- */
