@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>발표 게시판</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#16181d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="발표 게시판">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<script src="/pwa.js" defer></script>
+</head>
+<body class="login-body">
+
+<div class="login-card">
+  <div class="brand">
+    <span class="brand-mark">▶</span>
+    <span class="brand-name">발표 게시판</span>
+  </div>
+  <p class="login-lead">공유받은 주소를 붙여 넣으면 바로 열립니다.<br>로그인하지 않아도 됩니다.</p>
+
+  <form id="form">
+    <label for="link">공유 주소</label>
+    <input id="link" inputmode="url" autocomplete="off" spellcheck="false" autofocus
+           placeholder="붙여 넣기 (…/s/… 또는 …/f/…)">
+
+    <p class="login-error" id="error" hidden></p>
+    <button class="btn primary" id="open" type="submit">열기</button>
+  </form>
+
+  <p class="home-divider">올리는 사람이면</p>
+  <a class="home-login" href="/login">로그인</a>
+</div>
+
+<script type="module">
+const form = document.getElementById('form')
+const input = document.getElementById('link')
+const error = document.getElementById('error')
+const open = document.getElementById('open')
+
+// 공유 주소는 글이 /s/, 폴더가 /f/ 이고 코드는 22자다 (store.js 와 같은 규칙).
+const IN_URL = /\/(s|f)\/([A-Za-z0-9_-]{22})/
+const BARE = /^[A-Za-z0-9_-]{22}$/
+// 올린 사람만 여는 주소. 이걸 붙여 넣는 실수가 흔해서 따로 집어 준다.
+const PRIVATE = /\/p\/[0-9a-f]{10}/
+
+function fail(message) {
+  error.textContent = message
+  error.hidden = false
+  open.disabled = false
+  open.textContent = '열기'
+}
+
+/** 404 를 내는지만 본다. 본문은 받지 않는다. */
+async function exists(path) {
+  try {
+    return (await fetch(path, { method: 'HEAD' })).ok
+  } catch {
+    return false
+  }
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  error.hidden = true
+
+  const value = input.value.trim()
+  if (!value) return fail('주소를 붙여 넣으세요.')
+
+  if (PRIVATE.test(value)) {
+    return fail('이건 올린 사람만 열 수 있는 주소입니다. 공유 링크를 받아 주세요.')
+  }
+
+  const hit = value.match(IN_URL)
+  if (hit) {
+    location.href = `/${hit[1]}/${hit[2]}`
+    return
+  }
+
+  if (!BARE.test(value)) {
+    return fail('공유 주소가 아닙니다. 받은 링크를 통째로 붙여 넣어 보세요.')
+  }
+
+  // 코드만 붙여 넣으면 글인지 폴더인지 알 수 없다. 둘 다 두드려 본다.
+  open.disabled = true
+  open.textContent = '찾는 중…'
+  for (const kind of ['s', 'f']) {
+    if (await exists(`/${kind}/${value}`)) {
+      location.href = `/${kind}/${value}`
+      return
+    }
+  }
+  fail('없는 링크입니다. 주소가 맞는지, 공유가 꺼지지 않았는지 확인해 주세요.')
+})
+</script>
+</body>
+</html>
