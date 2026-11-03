@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url'
 import * as store from './lib/store.js'
 import * as users from './lib/users.js'
 import * as session from './lib/session.js'
-import { extractTitle, normalizeLabel, ensureCharset } from './lib/html.js'
+import { extractTitle, normalizeLabel, ensureCharset, injectHead } from './lib/html.js'
+import { bridgeScript } from './lib/bridge.js'
+import { scanStorageUse } from './lib/storage-scan.js'
 import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
 import { folderSharePage, noPreviewPage } from './lib/folder-share-page.js'
@@ -74,26 +76,34 @@ function prepareUpload(content, filename) {
 
   if (!content.trim()) return { error: '내용이 비어 있습니다.' }
 
-  if (kind === 'md') return { kind, source: content, title: extractMarkdownTitle(content) }
-  if (kind === 'svg' || kind === 'drawio') return { kind, source: content, title: '' }
+  if (kind === 'md') {
+    return { kind, source: content, title: extractMarkdownTitle(content), scan: scanStorageUse(content) }
+  }
+  if (kind === 'svg' || kind === 'drawio') return { kind, source: content, title: '', scan: [] }
 
   const html = ensureCharset(content)
-  return { kind, source: html, title: extractTitle(html) }
+  return { kind, source: html, title: extractTitle(html), scan: scanStorageUse(html) }
 }
 
 /**
  * 올린 원본을 브라우저에 보낼 형태로 바꾼다.
  * 변환은 올릴 때가 아니라 보여줄 때 한다 — 렌더러를 고치면 이미 올린 글에도 바로 먹는다.
+ *
+ * localStorage 는 동기 API 라 나중에 받아올 수 없다. 그래서 저장해 둔 상태를
+ * **그릴 때 코드 안에 박아 넣는다.** 그래야 자료가 getItem 을 부르는 즉시 값이 나온다.
+ *
+ * @param canWrite 공유 주소로 들어온 사람은 false. 보기만 하고 저장은 못 한다.
  */
-async function renderPost(post) {
+async function renderPost(post, { canWrite = false } = {}) {
   if (post.kind === 'drawio' && !hasDrawioViewer) {
     return { body: noPreviewPage(post), type: 'text/html; charset=utf-8', sandbox: true }
   }
 
   const source = await store.readSource(post.id, post.kind)
+  const bridge = bridgeScript({ state: await store.readState(post.id), canWrite })
 
   if (post.kind === 'drawio') {
-    const body = drawioPage({ title: post.title, xml: source })
+    const body = injectHead(drawioPage({ title: post.title, xml: source }), bridge)
     return { body, type: 'text/html; charset=utf-8', sandbox: true }
   }
 
@@ -103,10 +113,11 @@ async function renderPost(post) {
   if (post.kind === 'png') return { body: source, type: 'image/png', sandbox: false }
 
   // SVG 는 스크립트를 품을 수 있다. HTML 과 똑같이 가둔다.
+  // 다만 HTML 문서가 아니라 주입은 하지 않는다 — 저장할 상태가 있을 자료도 아니다.
   if (post.kind === 'svg') return { body: source, type: 'image/svg+xml', sandbox: true }
 
   const html = post.kind === 'md' ? renderMarkdown(source, post.title) : source
-  return { body: html, type: 'text/html; charset=utf-8', sandbox: true }
+  return { body: injectHead(html, bridge), type: 'text/html; charset=utf-8', sandbox: true }
 }
 
 const app = express()
@@ -120,6 +131,30 @@ function requireLogin(req, res, next) {
   if (!username) return res.status(401).json({ error: '로그인이 필요합니다.' })
   req.username = username
   next()
+}
+
+/**
+ * 브라우저 세션 **또는** API 토큰을 받는다.
+ * AI·스크립트가 사람 없이 올릴 수 있어야 해서 둘 다 연다.
+ * 토큰은 쿠키가 아니라 헤더로 오므로 CSRF 걱정이 없다.
+ */
+async function requireLoginOrToken(req, res, next) {
+  try {
+    const fromSession = session.read(req)
+    if (fromSession) {
+      req.username = fromSession
+      return next()
+    }
+    const header = req.get('authorization') ?? ''
+    const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+    const owner = token ? await users.userForToken(token) : null
+    if (!owner) return res.status(401).json({ error: '로그인 또는 API 토큰이 필요합니다.' })
+    req.username = owner
+    req.viaToken = true
+    next()
+  } catch (err) {
+    next(err)
+  }
 }
 
 // 헬스체크용. 로그인 없이 열려야 컨테이너가 살았는지 볼 수 있다.
@@ -196,6 +231,38 @@ app.delete('/api/users/:username', requireLogin, async (req, res, next) => {
     }
     if (!(await users.remove(target))) {
       return res.status(404).json({ error: '없는 계정입니다.' })
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/* ---------- API 토큰 ---------- */
+
+app.get('/api/tokens', requireLogin, async (req, res, next) => {
+  try {
+    res.json({ tokens: await users.listTokens(req.username) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.post('/api/tokens', requireLogin, async (req, res, next) => {
+  try {
+    const token = await users.createToken(req.username, normalizeLabel(req.body?.label, ''))
+    if (!token) return res.status(404).json({ error: '없는 계정입니다.' })
+    // 평문은 지금 한 번만 나간다. 우리도 다시 꺼낼 수 없다.
+    res.status(201).json({ token })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.delete('/api/tokens/:id', requireLogin, async (req, res, next) => {
+  try {
+    if (!(await users.removeToken(req.username, req.params.id))) {
+      return res.status(404).json({ error: '없는 토큰입니다.' })
     }
     res.json({ ok: true })
   } catch (err) {
@@ -354,8 +421,39 @@ app.get('/f/:token/:postId/download', async (req, res, next) => {
 
 /* ---------- 글·폴더 (로그인 필요) ---------- */
 
-app.get('/api/posts', requireLogin, (req, res) => {
+app.get('/api/posts', requireLoginOrToken, (req, res) => {
   res.json({ folders: store.listFolders(), posts: store.list() })
+})
+
+/* ---------- 발표 자료가 저장한 상태 ---------- */
+
+app.get('/api/state/:id', requireLoginOrToken, async (req, res, next) => {
+  try {
+    if (!withPost(req, res)) return
+    res.json({ state: await store.readState(req.params.id) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.put('/api/state/:id', requireLoginOrToken, async (req, res, next) => {
+  try {
+    if (!withPost(req, res)) return
+    const { state } = req.body ?? {}
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+      return res.status(400).json({ error: '상태는 객체여야 합니다.' })
+    }
+    const size = Buffer.byteLength(JSON.stringify(state))
+    if (size > store.MAX_STATE_BYTES) {
+      return res.status(413).json({
+        error: `상태가 너무 큽니다. (${Math.round(size / 1024)}KB / 한도 ${store.MAX_STATE_BYTES / 1024}KB)`,
+      })
+    }
+    await store.writeState(req.params.id, state)
+    res.json({ ok: true, bytes: size })
+  } catch (err) {
+    next(err)
+  }
 })
 
 /**
@@ -379,7 +477,7 @@ function resolveParentId(value, moving = null) {
   return { parentId: value }
 }
 
-app.post('/api/folders', requireLogin, async (req, res, next) => {
+app.post('/api/folders', requireLoginOrToken, async (req, res, next) => {
   try {
     const parent = resolveParentId(req.body?.parentId)
     if (parent.error) return res.status(400).json({ error: parent.error })
@@ -441,7 +539,7 @@ app.delete('/api/folders/:id', requireLogin, async (req, res, next) => {
   }
 })
 
-app.post('/api/posts', requireLogin, async (req, res, next) => {
+app.post('/api/posts', requireLoginOrToken, async (req, res, next) => {
   try {
     const { title, html, filename, folderId } = req.body ?? {}
     const folder = resolveFolderId(folderId)
@@ -454,6 +552,7 @@ app.post('/api/posts', requireLogin, async (req, res, next) => {
       title: normalizeLabel(title || prepared.title || baseName(filename), '제목 없는 발표'),
       source: prepared.source,
       kind: prepared.kind,
+      storage: prepared.scan ?? [],
       folderId: folder,
     })
     res.status(201).json({ post })
@@ -462,7 +561,7 @@ app.post('/api/posts', requireLogin, async (req, res, next) => {
   }
 })
 
-app.patch('/api/posts/:id', requireLogin, async (req, res, next) => {
+app.patch('/api/posts/:id', requireLoginOrToken, async (req, res, next) => {
   try {
     if (!withPost(req, res)) return
     const { title, html, filename, folderId, shared, notes } = req.body ?? {}
@@ -474,6 +573,7 @@ app.patch('/api/posts/:id', requireLogin, async (req, res, next) => {
       if (prepared.error) return res.status(400).json({ error: prepared.error })
       patch.kind = prepared.kind
       patch.source = prepared.source
+      patch.storage = prepared.scan ?? []
     }
     if (folderId !== undefined) {
       const folder = resolveFolderId(folderId)
@@ -514,7 +614,8 @@ app.get('/p/:id', requireLogin, async (req, res, next) => {
   try {
     const post = withPost(req, res)
     if (!post) return
-    sendDeck(res, await renderPost(post))
+    // 로그인해서 보는 자리에서만 자료가 상태를 저장할 수 있다.
+    sendDeck(res, await renderPost(post, { canWrite: true }))
   } catch (err) {
     next(err)
   }

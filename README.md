@@ -91,6 +91,7 @@ data/
   posts/<id>.html   올린 원본 그대로
   posts/<id>.md     마크다운도 원본 그대로
   posts/<id>.pdf    PDF·SVG·PNG·drawio 도 원본 그대로
+  state/<id>.json   그 자료가 스스로 저장한 상태 (체크 표시, 지도 핀 …)
 ```
 
 ```jsonc
@@ -133,6 +134,50 @@ author: 남덕우      ← YAML 머리말은 발표에 안 나온다
 - 글 밑줄로 쓴 `---`(Setext 제목)는 **자르지 않는다.** 앞에 빈 줄이 있어야 구분선으로 본다
 - 제목은 첫 `# 제목` → 파일 이름 순
 - 슬라이드 기능은 **외부 라이브러리를 안 쓴다.** 인터넷이 없는 사내망에서도 그대로 돈다
+
+## 발표 자료의 인터랙션과 저장
+
+체크박스·탭·폼·캔버스 같은 **DOM 인터랙션은 그냥 된다.** 격리는 저장만 막는다.
+
+자료가 `localStorage` 에 넣는 값은 **서버에 저장된다.** 올리는 쪽은 아무것도 안 해도 된다 —
+AI 에게 "체크 상태를 localStorage 에 저장해줘" 라고만 하면 그게 서버에 쌓인다.
+
+원리: 격리된 문서에서는 `localStorage` 를 건드리기만 해도 SecurityError 가 난다.
+그래서 **`localStorage` 를 우리 것으로 갈아 끼운다**(`lib/bridge.js`). 읽기는 그릴 때 박아 넣은
+값에서 바로 주고(동기 API 라 나중에 받아올 수 없다), 쓰기는 `postMessage` 로 부모에게 넘겨
+`PUT /api/state/:id` 로 저장한다.
+
+| | |
+|---|---|
+| 저장 위치 | `data/state/<글id>.json` — 글마다 따로 |
+| 한도 | 글당 256KB |
+| **공유 주소에서는 저장 안 됨** | `/s/`, `/f/` 는 읽기 전용이라 상태를 쓰지 못한다. 저장된 값을 **보기는** 한다 |
+| `sessionStorage` | 메모리로만 흉내낸다. 새로 고치면 사라진다 |
+| `indexedDB` · 쿠키 · 서비스워커 | **쓸 수 없다.** 손대면 경고를 띄운다 |
+
+### 저장 진단
+
+올릴 때 자료가 쓰는 저장 수단을 훑어 둔다. 못 쓰는 것을 쓰면 글을 열 때 **노란 경고 띠**가
+뜬다. 실행 중에 `indexedDB` 나 쿠키를 건드려도 그 자리에서 알린다.
+
+> 정규식으로 훑는 것이라 완벽하지 않다 — 문자열 안의 단어도 잡고, 동적으로 만든 이름은
+> 놓친다. "확실한 진단" 이 아니라 "한 번 보라는 신호" 로 쓴다.
+
+## API 토큰 — AI 가 직접 올리기
+
+사람 없이 올리려면 토큰을 쓴다. 사이드바 아래 `계정` → **API 토큰 발급**.
+**발급할 때 한 번만 보인다.** 서버도 해시만 들고 있어 다시 꺼낼 수 없다.
+
+```bash
+curl -X POST http://서버/api/posts   -H "Authorization: Bearer deck_xxxxx"   -H "Content-Type: application/json"   -d '{"html":"<h1>안녕</h1>","filename":"a.html","folderId":null}'
+
+# 자료의 상태를 직접 써 넣기
+curl -X PUT http://서버/api/state/<글id>   -H "Authorization: Bearer deck_xxxxx"   -H "Content-Type: application/json"   -d '{"state":{"chk0":"1"}}'
+```
+
+토큰이 먹는 곳: `GET /api/posts`, `POST /api/posts`, `PATCH /api/posts/:id`,
+`POST /api/folders`, `GET|PUT /api/state/:id`.
+계정·토큰 관리는 **브라우저 로그인만** 받는다 — 토큰으로 토큰을 만들 수는 없다.
 
 ## 발표자 노트
 
@@ -345,6 +390,9 @@ Restart=always
 | `POST` | `/api/password` | `{current, next}` — 로그인 필요 |
 | `GET` | `/p/:id` | 편집 화면용 본문 — 로그인 필요 |
 | `GET` | `/download/:id` | 올린 원본 내려받기 — 로그인 필요 |
+| `GET` `PUT` | `/api/state/:id` | 자료가 저장한 상태 — 로그인/토큰 |
+| `GET` `POST` | `/api/tokens` | API 토큰 목록·발급 — **로그인만** |
+| `DELETE` | `/api/tokens/:id` | 토큰 삭제 — **로그인만** |
 
 `POST /api/posts` 의 `html` 은 **파일 내용**이고, 마크다운인지 HTML 인지는 `filename` 의
 확장자로 가린다.
@@ -356,6 +404,8 @@ server.js            라우팅
 lib/store.js         파일시스템 저장소 (쓰기 직렬화·원자적 교체)
 lib/html.js          HTML 제목 추출, charset 보강
 lib/markdown.js      마크다운 -> HTML (문서 / 슬라이드)
+lib/bridge.js        자료 안에 끼워 넣는 코드 (localStorage -> 서버 저장)
+lib/storage-scan.js  올린 자료가 쓰는 저장 수단 훑기
 lib/users.js         계정 (scrypt 해시)
 lib/session.js       서명 쿠키 세션
 lib/share-page.js    발표 하나를 보여주는 읽기 전용 화면

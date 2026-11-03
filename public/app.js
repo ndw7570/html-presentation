@@ -22,6 +22,7 @@ const el = {
   notesRead: $('notesRead'),
   notesState: $('notesState'),
   notesBtn: $('notesBtn'),
+  storageNotice: $('storageNotice'),
   frameWrap: $('frameWrap'),
   frame: $('frame'),
   exitHint: $('exitHint'),
@@ -277,6 +278,51 @@ function renderFolderSelect(post) {
   el.folderSelect.title = folderPath(post.folderId ?? null)
 }
 
+/* ---------- 발표 자료가 저장하는 상태 ---------- */
+
+const STORAGE_MESSAGE = 'deck-storage'
+const STATE_SAVE_MS = 600
+
+let stateTimer = null
+
+function showStorageNotice(post) {
+  const findings = post?.storage ?? []
+  const warns = findings.filter((f) => f.level === 'warn')
+  el.storageNotice.hidden = !warns.length
+  if (!warns.length) return
+  el.storageNotice.textContent =
+    `저장이 안 되는 기능이 있습니다 — ${warns.map((w) => w.message).join(' ')}`
+}
+
+/**
+ * 자료 안에 끼워 넣은 코드가 보내는 메시지를 받는다.
+ * 보낸 쪽이 지금 보고 있는 그 iframe 인지 반드시 확인한다 — 아무 창이나 보낼 수 있다.
+ */
+window.addEventListener('message', async (e) => {
+  const msg = e.data
+  if (!msg || msg.__deck !== STORAGE_MESSAGE) return
+  if (e.source !== el.frame.contentWindow) return
+
+  const id = state.currentId
+  if (!id) return
+
+  if (msg.kind === 'unsupported') {
+    toast(`이 자료는 ${msg.api} 를 씁니다. 그 부분은 저장되지 않습니다.`, 'error')
+    return
+  }
+
+  if (msg.kind !== 'save') return
+  clearTimeout(stateTimer)
+  stateTimer = setTimeout(async () => {
+    try {
+      const { bytes } = await api('PUT', `/api/state/${id}`, { state: msg.state })
+      el.notesState.textContent = `자료 상태 저장됨 (${Math.max(1, Math.round(bytes / 1024))}KB)`
+    } catch (err) {
+      toast(`자료 상태를 저장하지 못했습니다 — ${err.message}`, 'error')
+    }
+  }, STATE_SAVE_MS)
+})
+
 /* ---------- 발표자 노트 ---------- */
 
 let notesTimer = null
@@ -349,6 +395,7 @@ function renderStage() {
   el.toggleShare.textContent = post.shared ? '공유 끄기' : '공유 켜기'
   renderFolderSelect(post)
   applySandbox(post)
+  showStorageNotice(post)
   // 같은 글을 다시 고르면 처음부터 다시 보여준다. 발표 중 되돌릴 때 필요하다.
   el.frame.src = `/p/${post.id}?t=${Date.now()}`
 }
@@ -720,6 +767,41 @@ async function listUsers() {
   }
 }
 
+async function newToken() {
+  const label = window.prompt('토큰 이름 (어디에 쓰는 것인지)')
+  if (label === null) return
+  try {
+    const { token } = await api('POST', '/api/tokens', { label })
+    // 평문은 지금 한 번만 볼 수 있다. 서버도 해시만 들고 있다.
+    window.prompt(
+      '이 토큰은 지금만 보입니다. 복사해서 안전한 곳에 두세요.\n' +
+        '쓸 때: Authorization: Bearer <토큰>',
+      token,
+    )
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function listTokens() {
+  try {
+    const { tokens } = await api('GET', '/api/tokens')
+    if (!tokens.length) return toast('발급한 토큰이 없습니다.')
+    const lines = tokens.map((t) => `· ${t.label} — ${t.hint}…  (${t.createdAt.slice(0, 10)})`)
+    const kill = window.prompt(
+      `토큰 ${tokens.length}개\n\n${lines.join('\n')}\n\n` +
+        '지우려면 이름을 그대로 입력하세요. 그냥 닫으려면 취소.',
+    )
+    if (!kill) return
+    const target = tokens.find((t) => t.label === kill.trim())
+    if (!target) return toast('그 이름의 토큰이 없습니다.', 'error')
+    await api('DELETE', `/api/tokens/${target.id}`)
+    toast(`"${target.label}" 토큰을 지웠습니다.`)
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
 async function logout() {
   await api('POST', '/api/logout').catch(() => {})
   location.replace('/login')
@@ -863,6 +945,8 @@ el.accountPop.addEventListener('click', (e) => {
   if (action === 'add-user') addUser()
   if (action === 'change-password') changePassword()
   if (action === 'list-users') listUsers()
+  if (action === 'new-token') newToken()
+  if (action === 'list-tokens') listTokens()
 })
 
 el.picker.addEventListener('change', () => {

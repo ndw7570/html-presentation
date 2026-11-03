@@ -650,6 +650,15 @@ kbd {
 
 .frame-wrap:fullscreen .exit-hint.show { opacity: 1; }
 
+.storage-notice {
+  margin: 0;
+  padding: 9px 18px;
+  border-bottom: 1px solid #f3d9a8;
+  background: #fff8e8;
+  color: #8a6212;
+  font-size: 12.5px;
+}
+
 /* ---------- 발표자 노트 ---------- */
 
 .notes {
