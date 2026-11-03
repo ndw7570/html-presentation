@@ -1105,3 +1105,54 @@ a.link-btn {
   .empty-card { padding: 28px 20px; }
   .empty-card .btn { display: none; }
 }
+
+/* ---------- 첫 화면 (로그인 전) ---------- */
+
+/*
+ * 공유 주소를 받은 사람 대부분은 계정이 없다. 그래서 첫 화면은 로그인이 아니라
+ * 주소를 붙여 넣는 자리이고, 로그인은 눌러서 가는 곳에 둔다.
+ */
+.home-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 24px 0 12px;
+  color: #6b7280;
+  font-size: 11.5px;
+}
+
+.home-divider::before,
+.home-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--panel-line);
+}
+
+.home-login {
+  display: block;
+  padding: 10px;
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  background: transparent;
+  color: #aab0bb;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+
+.home-login:hover {
+  border-color: var(--accent);
+  color: #e6e8ec;
+}
+
+.login-back {
+  display: block;
+  margin-top: 18px;
+  color: #6b7280;
+  font-size: 12px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.login-back:hover { color: #aab0bb; }

@@ -766,10 +766,15 @@ app.get(['/tokens', '/tokens.html'], (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'tokens.html'))
 })
 
-// 로그인 전에는 게시판 화면 자체를 내려 주지 않는다.
-// '/' 만 막으면 /index.html 로 그대로 받아 갈 수 있어 둘 다 건다.
+/*
+ * 로그인 전에는 게시판 화면 자체를 내려 주지 않는다.
+ * '/' 만 막으면 /index.html 로 그대로 받아 갈 수 있어 둘 다 건다.
+ *
+ * 로그인으로 보내지 않고 공유 주소를 여는 화면을 준다 — 이 주소를 받는 사람
+ * 대부분은 계정이 없다. 로그인은 거기서 눌러서 간다.
+ */
 app.get(['/', '/index.html'], (req, res, next) => {
-  if (!session.read(req)) return res.redirect('/login')
+  if (!session.read(req)) return res.sendFile(path.join(PUBLIC_DIR, 'home.html'))
   next()
 })
 
