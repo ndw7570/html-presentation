@@ -491,7 +491,7 @@ function withPostInSharedFolder(req, res) {
   if (!folder) return null
   const { postId } = req.params
   const post = store.isValidId(postId) ? store.get(postId) : null
-  if (!post || !store.subtreeFolderIds(folder.id).includes(post.folderId)) {
+  if (!post || post.deletedAt || !store.subtreeFolderIds(folder.id).includes(post.folderId)) {
     return notFound(res, '이 폴더에 없는 발표입니다.')
   }
   return post
@@ -742,10 +742,44 @@ app.post('/api/posts/:id/share-token', requireLogin, async (req, res, next) => {
   }
 })
 
+/*
+ * 지우기는 **휴지통으로 보내는 것**이다. 원본 파일은 그대로 둔다.
+ * 공유 주소는 이 순간부터 안 열린다 - 지운 것이 밖에서 계속 보이면 안 된다.
+ */
 app.delete('/api/posts/:id', requireLogin, async (req, res, next) => {
   try {
     if (!withPost(req, res)) return
-    await store.remove(req.params.id)
+    const post = await store.softRemove(req.params.id)
+    if (!post) return res.status(409).json({ error: '이미 휴지통에 있습니다.' })
+    res.json({ post })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.post('/api/posts/:id/restore', requireLogin, async (req, res, next) => {
+  try {
+    if (!withPost(req, res)) return
+    const post = await store.restore(req.params.id)
+    if (!post) return res.status(409).json({ error: '휴지통에 있는 발표가 아닙니다.' })
+    res.json({ post })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/*
+ * 진짜 삭제. 되돌릴 수 없다.
+ * **휴지통에 있는 것만** 받는다. 한 번은 거쳐 가게 해서 실수로 날리는 일을 막는다.
+ */
+app.delete('/api/posts/:id/purge', requireLogin, async (req, res, next) => {
+  try {
+    const post = withPost(req, res)
+    if (!post) return
+    if (!post.deletedAt) {
+      return res.status(409).json({ error: '먼저 휴지통으로 보내세요.' })
+    }
+    await store.purge(req.params.id)
     res.json({ ok: true })
   } catch (err) {
     next(err)

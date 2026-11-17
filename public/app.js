@@ -3,6 +3,8 @@ const $ = (id) => document.getElementById(id)
 const UNFILED = '미분류'
 const COLLAPSED_KEY = 'collapsedFolders'
 const NOTES_OPEN_KEY = 'notesOpen'
+// 어느 보기를 보고 있었는지. 새로 고쳐도 그대로 둔다.
+const VIEW_KEY = 'listView'
 const NOTES_SAVE_MS = 800
 // 끌어 옮길 때 쓰는 표식. 파일 드롭과 섞이지 않게 전용 타입을 쓴다.
 const POST_MIME = 'application/x-deck-post'
@@ -23,6 +25,10 @@ const el = {
   notesState: $('notesState'),
   notesBtn: $('notesBtn'),
   storageNotice: $('storageNotice'),
+  viewTabs: $('viewTabs'),
+  trashCount: $('trashCount'),
+  trashBar: $('trashBar'),
+  deleteItem: $('deleteItem'),
   resetBtn: $('resetBtn'),
   frameWrap: $('frameWrap'),
   frame: $('frame'),
@@ -53,6 +59,8 @@ const state = {
   query: '',
   username: null,
   pickerMode: 'create',
+  // 무엇을 볼지: live(지운 것 빼고) · all(다) · trash(지운 것만)
+  view: localStorage.getItem(VIEW_KEY) || 'live',
   // 폴더 메뉴가 어느 폴더를 겨냥하고 있는지.
   menuFolderId: null,
 }
@@ -91,7 +99,12 @@ function toast(message, kind = '') {
 
 const currentPost = () => state.posts.find((p) => p.id === state.currentId)
 const folderName = (id) => state.folders.find((f) => f.id === id)?.name ?? UNFILED
-const postsIn = (folderId) => state.posts.filter((p) => (p.folderId ?? null) === folderId)
+/** 지금 보기에 걸리는 글인가. 세 화면이 모두 이 한 줄을 지나간다. */
+const inView = (post) =>
+  state.view === 'all' ? true : state.view === 'trash' ? Boolean(post.deletedAt) : !post.deletedAt
+
+const postsIn = (folderId) =>
+  state.posts.filter((p) => (p.folderId ?? null) === folderId && inView(p))
 const childFolders = (parentId) => state.folders.filter((f) => (f.parentId ?? null) === parentId)
 
 /** `제품 기획 / 2026` 처럼 위에서부터 이어 붙인 이름. 선택 상자·알림에 쓴다. */
@@ -130,6 +143,15 @@ function postItem(post) {
   meta.textContent = `${tag}${formatDate(post.updatedAt)}`
 
   item.append(title, meta)
+
+  // 전체 보기에서는 산 것과 지운 것이 섞인다. 한눈에 갈라져야 한다.
+  if (post.deletedAt) {
+    item.classList.add('gone')
+    const gone = document.createElement('span')
+    gone.className = 'gone-tag'
+    gone.textContent = '삭제됨'
+    title.append(gone)
+  }
   return item
 }
 
@@ -204,16 +226,16 @@ function folderGroup(folderId, name, depth = 0) {
   return group
 }
 
-function renderSearchResults(query) {
-  const hits = state.posts.filter((p) => p.title.toLowerCase().includes(query))
-  if (!hits.length) {
+/** 폴더 없이 한 줄씩. 검색 결과와 휴지통이 같이 쓴다. */
+function renderFlat(posts, emptyText) {
+  if (!posts.length) {
     const note = document.createElement('p')
     note.className = 'list-empty'
-    note.textContent = '검색 결과가 없습니다.'
+    note.textContent = emptyText
     el.list.append(note)
     return
   }
-  for (const post of hits) {
+  for (const post of posts) {
     const item = postItem(post)
     const where = document.createElement('span')
     where.className = 'hit-folder'
@@ -223,11 +245,32 @@ function renderSearchResults(query) {
   }
 }
 
+function renderSearchResults(query) {
+  renderFlat(
+    state.posts.filter((p) => inView(p) && p.title.toLowerCase().includes(query)),
+    '검색 결과가 없습니다.',
+  )
+}
+
+/** 켜진 탭과 휴지통 개수를 지금 상태에 맞춘다. 목록을 그릴 때마다 같이 맞춘다. */
+function syncViewTabs() {
+  for (const tab of el.viewTabs.querySelectorAll('button')) {
+    tab.classList.toggle('on', tab.dataset.view === state.view)
+  }
+  const gone = state.posts.filter((p) => p.deletedAt).length
+  el.trashCount.hidden = !gone
+  el.trashCount.textContent = gone
+}
+
 function renderList() {
+  syncViewTabs()
   el.list.replaceChildren()
 
   const query = state.query.trim().toLowerCase()
   if (query) return renderSearchResults(query)
+
+  // 휴지통은 폴더째 보여 줄 이유가 없다. 빈 폴더만 잔뜩 나온다.
+  if (state.view === 'trash') return renderFlat(state.posts.filter(inView), '휴지통이 비었습니다.')
 
   if (!state.posts.length && !state.folders.length) {
     const note = document.createElement('p')
@@ -410,6 +453,9 @@ function renderStage() {
   renderFolderSelect(post)
   applySandbox(post)
   showStorageNotice(post)
+  el.trashBar.hidden = !post.deletedAt
+  // 이미 휴지통에 있는 것을 또 "휴지통으로" 보낼 수는 없다.
+  el.deleteItem.hidden = Boolean(post.deletedAt)
   // 자료가 뜨면서 저장된 게 있다고 알려 주면 그때 다시 켠다.
   el.resetBtn.hidden = true
   // 같은 글을 다시 고르면 처음부터 다시 보여준다. 발표 중 되돌릴 때 필요하다.
@@ -789,13 +835,43 @@ async function renamePost() {
 
 async function deletePost() {
   const post = currentPost()
-  if (!window.confirm(`"${post.title}" 을(를) 삭제합니다. 되돌릴 수 없습니다.`)) return
+  if (!window.confirm(
+    `"${post.title}" 을(를) 휴지통으로 보냅니다.\n공유 주소는 바로 안 열리게 됩니다.`,
+  )) return
   try {
     await api('DELETE', `/api/posts/${post.id}`)
+    // 닫지 않는다. 방금 지운 것을 눈앞에 두어야 되살리기가 보인다.
+    await refresh()
+    toast('휴지통으로 보냈습니다. 되살릴 수 있습니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function restorePost() {
+  const post = currentPost()
+  if (!post) return
+  try {
+    await api('POST', `/api/posts/${post.id}/restore`)
+    await refresh()
+    toast('되살렸습니다. 쓰던 공유 주소도 다시 열립니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function purgePost() {
+  const post = currentPost()
+  if (!post) return
+  if (!window.confirm(
+    `"${post.title}" 을(를) **완전히** 지웁니다.\n원본 파일과 저장된 상태까지 사라지고, 되돌릴 수 없습니다.`,
+  )) return
+  try {
+    await api('DELETE', `/api/posts/${post.id}/purge`)
     state.currentId = null
     location.hash = ''
     await refresh()
-    toast('삭제했습니다.')
+    toast('완전히 지웠습니다.')
   } catch (err) {
     toast(err.message, 'error')
   }
@@ -1058,6 +1134,16 @@ $('presentBtn').addEventListener('click', present)
 $('shareBtn').addEventListener('click', copyShareLink)
 $('openBtn').addEventListener('click', () => window.open(`/p/${state.currentId}`, '_blank'))
 el.resetBtn.addEventListener('click', resetState)
+$('restoreBtn').addEventListener('click', restorePost)
+$('purgeBtn').addEventListener('click', purgePost)
+
+el.viewTabs.addEventListener('click', (e) => {
+  const view = e.target.closest('button')?.dataset.view
+  if (!view || view === state.view) return
+  state.view = view
+  localStorage.setItem(VIEW_KEY, view)
+  renderList()
+})
 $('logoutBtn').addEventListener('click', logout)
 
 $('accountBtn').addEventListener('click', (e) => {
