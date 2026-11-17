@@ -491,7 +491,7 @@ function withPostInSharedFolder(req, res) {
   if (!folder) return null
   const { postId } = req.params
   const post = store.isValidId(postId) ? store.get(postId) : null
-  if (!post || post.deletedAt || !store.subtreeFolderIds(folder.id).includes(post.folderId)) {
+  if (!post || store.postGone(post) || !store.subtreeFolderIds(folder.id).includes(post.folderId)) {
     return notFound(res, '이 폴더에 없는 발표입니다.')
   }
   return post
@@ -639,11 +639,48 @@ app.post('/api/folders/:id/share-token', requireLogin, async (req, res, next) =>
   }
 })
 
+/*
+ * 폴더 지우기도 **휴지통으로 보내는 것**이다.
+ * 안에 든 것이 통째로 같이 숨는다 - 되살릴 때 묶어 둔 모양 그대로 돌아오게 하려고.
+ */
 app.delete('/api/folders/:id', requireLogin, async (req, res, next) => {
   try {
-    if (!(await store.removeFolder(req.params.id))) {
+    if (!store.getFolder(req.params.id)) {
       return res.status(404).json({ error: '없는 폴더입니다.' })
     }
+    const folder = await store.softRemoveFolder(req.params.id)
+    if (!folder) return res.status(409).json({ error: '이미 휴지통에 있습니다.' })
+    res.json({ folder })
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.post('/api/folders/:id/restore', requireLogin, async (req, res, next) => {
+  try {
+    if (!store.getFolder(req.params.id)) {
+      return res.status(404).json({ error: '없는 폴더입니다.' })
+    }
+    const folder = await store.restoreFolder(req.params.id)
+    if (!folder) return res.status(409).json({ error: '휴지통에 있는 폴더가 아닙니다.' })
+    res.json({ folder })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/*
+ * 폴더와 **그 아래 전부**를 진짜로 지운다.
+ * 휴지통에 있는 폴더만 받는다 - 한 번은 거쳐 가게 해서 실수로 날리는 일을 막는다.
+ */
+app.delete('/api/folders/:id/purge', requireLogin, async (req, res, next) => {
+  try {
+    const folder = store.getFolder(req.params.id)
+    if (!folder) return res.status(404).json({ error: '없는 폴더입니다.' })
+    if (!folder.deletedAt) {
+      return res.status(409).json({ error: '먼저 휴지통으로 보내세요.' })
+    }
+    await store.purgeFolder(req.params.id)
     res.json({ ok: true })
   } catch (err) {
     next(err)

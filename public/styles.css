@@ -1284,3 +1284,43 @@ a.link-btn {
 }
 
 .trash-bar .grow { flex: 1; }
+
+/* 휴지통에 든 폴더 한 줄. 글과 달리 눌러서 열 것이 없으니 단추를 바로 붙인다. */
+.trash-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 2px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.trash-row-text { flex: 1; min-width: 0; }
+
+.trash-row strong {
+  display: block;
+  color: #c8ccd4;
+  font-size: 12.5px;
+}
+
+.trash-row span {
+  display: block;
+  color: #6f7682;
+  font-size: 11px;
+}
+
+.trash-row .btn {
+  padding: 4px 8px;
+  border-color: var(--panel-line);
+  background: transparent;
+  color: #aab0bb;
+  font-size: 11px;
+}
+
+.trash-row .btn:hover { border-color: var(--accent); color: #e6e8ec; }
+.trash-row .btn.danger { color: #e08a84; }
+.trash-row .btn.danger:hover { border-color: var(--danger); color: #ff9d96; }
+
+.trash-row-acts { display: flex; gap: 6px; }
+.trash-row-acts .btn { flex: 1; }
