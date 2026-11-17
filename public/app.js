@@ -99,9 +99,30 @@ function toast(message, kind = '') {
 
 const currentPost = () => state.posts.find((p) => p.id === state.currentId)
 const folderName = (id) => state.folders.find((f) => f.id === id)?.name ?? UNFILED
+/**
+ * 그 폴더 자신이나 조상 중 하나가 휴지통에 있나.
+ * 폴더를 지우면 안에 든 것이 통째로 숨으므로 한 단계만 보면 안 된다.
+ */
+function folderGone(id) {
+  for (let at = id, hops = 0; at && hops <= 8; hops += 1) {
+    const folder = state.folders.find((f) => f.id === at)
+    if (!folder) break
+    if (folder.deletedAt) return true
+    at = folder.parentId ?? null
+  }
+  return false
+}
+
+/** 안 보여야 하는 글인가. 제가 지워졌거나, 든 폴더가 지워졌거나. */
+const postGone = (post) => Boolean(post.deletedAt) || folderGone(post.folderId ?? null)
+
 /** 지금 보기에 걸리는 글인가. 세 화면이 모두 이 한 줄을 지나간다. */
 const inView = (post) =>
-  state.view === 'all' ? true : state.view === 'trash' ? Boolean(post.deletedAt) : !post.deletedAt
+  state.view === 'all' ? true : state.view === 'trash' ? postGone(post) : !postGone(post)
+
+/** 트리에 그릴 폴더. 휴지통 탭은 평평하게 따로 그리므로 여기 안 온다. */
+const foldersToDraw = (parentId) =>
+  childFolders(parentId).filter((f) => state.view === 'all' || !folderGone(f.id))
 
 const postsIn = (folderId) =>
   state.posts.filter((p) => (p.folderId ?? null) === folderId && inView(p))
@@ -145,7 +166,7 @@ function postItem(post) {
   item.append(title, meta)
 
   // 전체 보기에서는 산 것과 지운 것이 섞인다. 한눈에 갈라져야 한다.
-  if (post.deletedAt) {
+  if (postGone(post)) {
     item.classList.add('gone')
     const gone = document.createElement('span')
     gone.className = 'gone-tag'
@@ -159,7 +180,7 @@ function folderGroup(folderId, name, depth = 0) {
   const posts = postsIn(folderId)
   // folderId 가 null 이면 미분류 칸이다. 최상위 폴더도 parentId 가 null 이라,
   // 그냥 자식을 찾으면 맨 위 폴더들이 미분류 안에 한 번 더 들어간다.
-  const children = folderId === null ? [] : childFolders(folderId)
+  const children = folderId === null ? [] : foldersToDraw(folderId)
   const collapsed = state.collapsed.has(String(folderId))
 
   const group = document.createElement('section')
@@ -226,9 +247,66 @@ function folderGroup(folderId, name, depth = 0) {
   return group
 }
 
+/**
+ * 휴지통. 폴더째 보여 줄 이유가 없다 - 빈 폴더만 잔뜩 나온다.
+ *
+ * **맨 바깥에서 지워진 것만** 올린다. 폴더를 지우면 그 안의 글 수십 개가 같이 숨는데,
+ * 그걸 전부 늘어놓으면 정작 되살릴 대상인 폴더가 묻힌다.
+ */
+function renderTrash() {
+  const folders = state.folders.filter((f) => f.deletedAt && !folderGone(f.parentId ?? null))
+  const posts = state.posts.filter((p) => p.deletedAt && !folderGone(p.folderId ?? null))
+
+  if (!folders.length && !posts.length) {
+    const note = document.createElement('p')
+    note.className = 'list-empty'
+    note.textContent = '휴지통이 비었습니다.'
+    el.list.append(note)
+    return
+  }
+
+  for (const folder of folders) el.list.append(trashFolderRow(folder))
+  renderFlat(posts, '')
+}
+
+function trashFolderRow(folder) {
+  const row = document.createElement('div')
+  row.className = 'trash-row'
+
+  const name = document.createElement('strong')
+  name.textContent = `📁 ${folder.name}`
+  const where = document.createElement('span')
+  const inside = postsInSubtree(folder.id).length
+  where.textContent = `${folderPath(folder.parentId ?? null)} · 발표 ${inside}개 포함`
+
+  const back = document.createElement('button')
+  back.className = 'btn'
+  back.textContent = '되살리기'
+  back.onclick = () => restoreFolder(folder.id)
+
+  const kill = document.createElement('button')
+  kill.className = 'btn danger'
+  kill.textContent = '완전 삭제'
+  kill.onclick = () => purgeFolder(folder.id)
+
+  const text = document.createElement('div')
+  text.className = 'trash-row-text'
+  text.append(name, where)
+
+  // 사이드바가 272px 이라 한 줄에 다 넣으면 글자마다 줄바꿈된다.
+  const acts = document.createElement('div')
+  acts.className = 'trash-row-acts'
+  acts.append(back, kill)
+
+  row.append(text, acts)
+  return row
+}
+
 /** 폴더 없이 한 줄씩. 검색 결과와 휴지통이 같이 쓴다. */
 function renderFlat(posts, emptyText) {
+  // emptyText 가 빈 문자열이면 이미 다른 줄이 있다는 뜻이다. 아무 말도 안 한다.
   if (!posts.length) {
+    if (!emptyText) return
     const note = document.createElement('p')
     note.className = 'list-empty'
     note.textContent = emptyText
@@ -257,7 +335,10 @@ function syncViewTabs() {
   for (const tab of el.viewTabs.querySelectorAll('button')) {
     tab.classList.toggle('on', tab.dataset.view === state.view)
   }
-  const gone = state.posts.filter((p) => p.deletedAt).length
+  // 폴더 하나와 그 안의 글 수십 개를 따로 세면 숫자가 겁을 준다. 바깥에서 지운 것만 센다.
+  const gone =
+    state.folders.filter((f) => f.deletedAt && !folderGone(f.parentId ?? null)).length +
+    state.posts.filter((p) => p.deletedAt && !folderGone(p.folderId ?? null)).length
   el.trashCount.hidden = !gone
   el.trashCount.textContent = gone
 }
@@ -269,8 +350,7 @@ function renderList() {
   const query = state.query.trim().toLowerCase()
   if (query) return renderSearchResults(query)
 
-  // 휴지통은 폴더째 보여 줄 이유가 없다. 빈 폴더만 잔뜩 나온다.
-  if (state.view === 'trash') return renderFlat(state.posts.filter(inView), '휴지통이 비었습니다.')
+  if (state.view === 'trash') return renderTrash()
 
   if (!state.posts.length && !state.folders.length) {
     const note = document.createElement('p')
@@ -280,7 +360,7 @@ function renderList() {
     return
   }
 
-  childFolders(null).forEach((f) => el.list.append(folderGroup(f.id, f.name)))
+  foldersToDraw(null).forEach((f) => el.list.append(folderGroup(f.id, f.name)))
   el.list.append(folderGroup(null, UNFILED))
 }
 
@@ -306,7 +386,8 @@ function applySandbox(post) {
 
 /** 트리 순서로 평평하게 편다. 선택 상자는 줄 순서로만 계층을 보여줄 수 있다. */
 function flattenFolders(parentId = null, depth = 0, out = []) {
-  for (const folder of childFolders(parentId)) {
+  // 휴지통에 있는 폴더로 글을 옮길 수는 없다. 보기와 무관하게 늘 뺀다.
+  for (const folder of childFolders(parentId).filter((f) => !f.deletedAt)) {
     out.push({ ...folder, depth })
     flattenFolders(folder.id, depth + 1, out)
   }
@@ -583,23 +664,17 @@ async function renameFolder(id) {
 }
 
 async function deleteFolder(id) {
-  const posts = postsIn(id).length
-  const children = childFolders(id).length
-  const parent = state.folders.find((f) => f.id === id)?.parentId ?? null
-  const moved = []
-  if (posts) moved.push(`발표 ${posts}개`)
-  if (children) moved.push(`하위 폴더 ${children}개`)
-
-  const warning = moved.length
-    ? `"${folderPath(id)}" 폴더를 지웁니다.\n\n안에 있는 ${moved.join('와 ')}는 ` +
-      `"${folderPath(parent)}" (으)로 옮겨지고 지워지지 않습니다.`
-    : `"${folderPath(id)}" 폴더를 지웁니다.`
+  const inside = postsInSubtree(id).length
+  const warning =
+    `"${folderPath(id)}" 폴더를 휴지통으로 보냅니다.\n\n` +
+    (inside ? `안에 있는 발표 ${inside}개도 같이 숨습니다. ` : '') +
+    '되살리면 지금 모양 그대로 돌아옵니다.'
   if (!window.confirm(warning)) return
 
   try {
     await api('DELETE', `/api/folders/${id}`)
     await refresh()
-    toast('폴더를 지웠습니다.')
+    toast('폴더를 휴지통으로 보냈습니다.')
   } catch (err) {
     toast(err.message, 'error')
   }
@@ -843,6 +918,33 @@ async function deletePost() {
     // 닫지 않는다. 방금 지운 것을 눈앞에 두어야 되살리기가 보인다.
     await refresh()
     toast('휴지통으로 보냈습니다. 되살릴 수 있습니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function restoreFolder(id) {
+  try {
+    await api('POST', `/api/folders/${id}/restore`)
+    await refresh()
+    toast('폴더를 되살렸습니다. 안에 있던 것도 같이 돌아왔습니다.')
+  } catch (err) {
+    toast(err.message, 'error')
+  }
+}
+
+async function purgeFolder(id) {
+  const folder = state.folders.find((f) => f.id === id)
+  const inside = postsInSubtree(id).length
+  if (!window.confirm(
+    `"${folder?.name ?? ''}" 폴더와 그 아래 **전부**를 완전히 지웁니다.\n` +
+      (inside ? `발표 ${inside}개의 원본 파일까지 사라집니다.\n` : '') +
+      '되돌릴 수 없습니다.',
+  )) return
+  try {
+    await api('DELETE', `/api/folders/${id}/purge`)
+    await refresh()
+    toast('완전히 지웠습니다.')
   } catch (err) {
     toast(err.message, 'error')
   }
