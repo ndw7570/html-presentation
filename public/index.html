@@ -33,6 +33,12 @@
       <input id="search" type="search" placeholder="검색  ( / )" autocomplete="off">
     </div>
 
+    <div class="view-tabs" id="viewTabs" role="group" aria-label="무엇을 볼지">
+      <button data-view="live" class="on">일반</button>
+      <button data-view="all">전체</button>
+      <button data-view="trash">휴지통 <span class="trash-count" id="trashCount" hidden></span></button>
+    </div>
+
     <nav class="post-list" id="postList" aria-label="발표 목록"></nav>
 
     <div class="sidebar-foot">
@@ -71,13 +77,19 @@
             <button data-action="toggle-share" id="toggleShare">공유 끄기</button>
             <button data-action="rotate-share">새 공유 주소 발급</button>
             <hr>
-            <button data-action="delete" class="danger">삭제</button>
+            <button data-action="delete" class="danger" id="deleteItem">휴지통으로</button>
           </div>
         </div>
       </div>
     </header>
 
     <p class="storage-notice" id="storageNotice" hidden></p>
+
+    <div class="trash-bar" id="trashBar" hidden>
+      <span class="grow">휴지통에 있습니다. 공유 주소는 열리지 않습니다.</span>
+      <button class="btn" id="restoreBtn">되살리기</button>
+      <button class="btn" id="purgeBtn">완전히 지우기</button>
+    </div>
 
     <div class="frame-wrap" id="frameWrap" hidden>
       <iframe
