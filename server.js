@@ -28,7 +28,11 @@ const SECURE_COOKIE = process.env.SECURE_COOKIE === '1'
 
 // 업로드된 HTML 은 남이 쓴 코드다. 직접 주소로 열렸을 때도 이 사이트의
 // 쿠키·localStorage 에 닿지 못하도록 응답 자체를 불투명 출처로 묶는다.
-const RAW_SANDBOX = 'sandbox allow-scripts allow-popups allow-forms allow-modals allow-downloads'
+// allow-popups-to-escape-sandbox 가 없으면 새 탭도 불투명 출처를 물려받는다. 그러면 바깥
+// 사이트가 제 스크립트·CSS 를 CORS 로 거절당해 흰 화면만 뜬다(실측).
+const RAW_SANDBOX =
+  'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox' +
+  ' allow-forms allow-modals allow-downloads'
 
 /** 파일 이름에서 확장자를 떼어 제목 후보로 쓴다. */
 function baseName(filename) {
