@@ -374,7 +374,10 @@ const KIND_LABEL = {
   png: 'PNG',
   drawio: 'draw.io',
 }
-const FRAME_SANDBOX = 'allow-scripts allow-popups allow-forms allow-modals allow-downloads'
+// to-escape-sandbox 가 빠지면 바깥 링크로 연 새 탭까지 불투명 출처가 되어 흰 화면이 된다.
+const FRAME_SANDBOX =
+  'allow-scripts allow-popups allow-popups-to-escape-sandbox' +
+  ' allow-forms allow-modals allow-downloads'
 // PDF·PNG 는 sandbox 를 걸면 브라우저 내장 뷰어가 아예 안 뜬다(PDF 는 실측).
 // 둘 다 이 페이지의 JS 로 실행되지 않는 형식이라 가둘 이유도 없다.
 const OPEN_KINDS = new Set(['pdf', 'png'])
