@@ -28,6 +28,10 @@
       <button class="new-btn" id="newBtn">+ 새 발표 올리기</button>
       <button class="new-folder-btn" id="newFolderBtn" title="새 폴더 만들기">＋ 폴더</button>
     </div>
+    <!-- 분류용 "폴더" 와 헷갈리지 않게 파일 여러 개짜리 자료는 "묶음" 이라 부른다. -->
+    <button class="bundle-btn" id="newBundleBtn" title="img·proto 같은 하위 폴더를 끼고 있는 자료를 폴더째 올립니다">
+      ⬚ 묶음(폴더째) 올리기
+    </button>
 
     <div class="search">
       <input id="search" type="search" placeholder="검색  ( / )" autocomplete="off">
@@ -170,6 +174,21 @@
   multiple
   hidden
 >
+
+<!-- 폴더째 고르기. webkitdirectory 는 accept 를 무시하므로 거르기는 코드에서 한다. -->
+<input type="file" id="folderPicker" webkitdirectory directory multiple hidden>
+
+<dialog class="entry-dialog" id="entryDialog">
+  <form method="dialog">
+    <h2>첫 화면을 고르세요</h2>
+    <p class="entry-sub" id="entrySub"></p>
+    <div class="entry-list" id="entryList"></div>
+    <menu>
+      <button value="cancel" class="btn">취소</button>
+      <button value="ok" class="btn primary" id="entryOk">이걸로 올리기</button>
+    </menu>
+  </form>
+</dialog>
 
 <script src="/app.js" type="module"></script>
 </body>

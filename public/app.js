@@ -38,6 +38,10 @@ const el = {
   dropTarget: $('dropTarget'),
   toasts: $('toasts'),
   picker: $('filePicker'),
+  folderPicker: $('folderPicker'),
+  entryDialog: $('entryDialog'),
+  entryList: $('entryList'),
+  entrySub: $('entrySub'),
   morePop: $('morePop'),
   moreBtn: $('moreBtn'),
   folderPop: $('folderPop'),
@@ -373,6 +377,8 @@ const KIND_LABEL = {
   svg: 'SVG',
   png: 'PNG',
   drawio: 'draw.io',
+  // 분류용 "폴더" 와 가르려고 파일 여러 개짜리 자료는 "묶음" 이라 부른다.
+  bundle: '묶음',
 }
 // to-escape-sandbox 가 빠지면 바깥 링크로 연 새 탭까지 불투명 출처가 되어 흰 화면이 된다.
 const FRAME_SANDBOX =
@@ -531,8 +537,11 @@ function renderStage() {
   el.title.textContent = post.title
   el.meta.textContent =
     `${KIND_LABEL[post.kind] ?? 'HTML'} · ${formatDate(post.createdAt)} 등록 · ` +
+    (post.files ? `파일 ${post.files}개 · ` : '') +
     `${Math.max(1, Math.round(post.bytes / 1024))} KB` +
     (post.shared ? '' : ' · 공유 꺼짐')
+  // 묶음은 파일이 여럿이라 한 파일로 내려줄 수 없다.
+  document.querySelector('[data-action="download"]').hidden = post.kind === 'bundle'
   el.toggleShare.textContent = post.shared ? '공유 끄기' : '공유 켜기'
   renderFolderSelect(post)
   applySandbox(post)
@@ -610,6 +619,150 @@ async function uploadFiles(files) {
   if (last) {
     select(last.id)
     toast(`"${last.title}" → ${folderName(last.folderId ?? null)}`)
+  }
+}
+
+/* ---------- 묶음(폴더째) 업로드 ---------- */
+
+// 서버의 lib/bundle.js 와 같은 목록. 여기서 거르는 건 친절이고, 진짜 판정은 서버가 한다.
+const BUNDLE_OK = /\.(html?|css|m?js|json|txt|csv|md|xml|drawio|jpe?g|png|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|mp4|webm|mp3|wav|ogg|pdf)$/i
+const MAX_BUNDLE_FILES = 600
+const MAX_BUNDLE_BYTES = 40 * 1024 * 1024
+
+/** 떨군 항목을 훑어 { path, file } 목록으로 편다. 폴더면 안까지 들어간다. */
+async function walkEntry(entry, prefix = '') {
+  if (entry.isFile) {
+    const file = await new Promise((ok, no) => entry.file(ok, no))
+    return [{ path: prefix + entry.name, file }]
+  }
+  if (!entry.isDirectory) return []
+
+  const reader = entry.createReader()
+  const children = []
+  // readEntries 는 한 번에 다 주지 않는다. 빈 배열이 올 때까지 계속 불러야 한다.
+  for (;;) {
+    const batch = await new Promise((ok, no) => reader.readEntries(ok, no))
+    if (!batch.length) break
+    children.push(...batch)
+  }
+  const out = []
+  for (const child of children) out.push(...(await walkEntry(child, prefix + entry.name + '/')))
+  return out
+}
+
+/** <input webkitdirectory> 가 준 파일들. webkitRelativePath 에 폴더 경로가 들어 있다. */
+const fromDirectoryInput = (files) =>
+  [...files].map((file) => ({ path: file.webkitRelativePath || file.name, file }))
+
+/**
+ * 맨 앞의 공통 폴더 이름을 떼어 낸다.
+ * "2026-11-23-legacy-review/img/a.png" 를 그대로 두면 주소가 한 단 깊어진다.
+ */
+function stripCommonRoot(items) {
+  const first = items[0].path.split('/')[0]
+  if (items.length < 2 && !items[0].path.includes('/')) return items
+  if (!items.every((it) => it.path.startsWith(first + '/'))) return items
+  return items.map((it) => ({ ...it, path: it.path.slice(first.length + 1) }))
+}
+
+const isHtmlPath = (p) => /\.x?html?$/i.test(p)
+
+/** 첫 화면 후보. 맨 위층의 HTML 만 보여 준다 - 하위 폴더 것까지 늘어놓으면 고르기 어렵다. */
+function entryCandidates(items) {
+  const top = items.filter((it) => isHtmlPath(it.path) && !it.path.includes('/'))
+  return (top.length ? top : items.filter((it) => isHtmlPath(it.path)))
+    .map((it) => it.path)
+    .sort()
+}
+
+/** 후보가 둘 이상이면 물어본다. 고르지 않으면 null. */
+function askEntry(candidates, items) {
+  const index = candidates.find((p) => /^index\.x?html?$/i.test(p))
+  if (candidates.length === 1) return Promise.resolve(candidates[0])
+
+  // index.html 이 있으면 그게 관례다. 없으면 가장 큰 파일이 보통 본문이다.
+  const biggest = [...candidates].sort(
+    (a, b) => (items.find((i) => i.path === b)?.file.size ?? 0) -
+      (items.find((i) => i.path === a)?.file.size ?? 0),
+  )[0]
+  const preset = index ?? biggest
+
+  el.entryList.textContent = ''
+  for (const path of candidates) {
+    const row = document.createElement('label')
+    row.className = 'entry-row'
+    const radio = document.createElement('input')
+    radio.type = 'radio'
+    radio.name = 'entry'
+    radio.value = path
+    radio.checked = path === preset
+    const size = items.find((i) => i.path === path)?.file.size ?? 0
+    const name = document.createElement('span')
+    name.textContent = path
+    const kb = document.createElement('small')
+    kb.textContent = `${Math.max(1, Math.round(size / 1024))} KB`
+    row.append(radio, name, kb)
+    el.entryList.append(row)
+  }
+  const total = items.reduce((sum, it) => sum + it.file.size, 0)
+  el.entrySub.textContent =
+    `파일 ${items.length}개 · ${Math.round(total / 1024 / 1024 * 10) / 10} MB`
+
+  return new Promise((resolve) => {
+    el.entryDialog.addEventListener('close', function once() {
+      el.entryDialog.removeEventListener('close', once)
+      if (el.entryDialog.returnValue !== 'ok') return resolve(null)
+      resolve(el.entryList.querySelector('input:checked')?.value ?? null)
+    })
+    el.entryDialog.showModal()
+  })
+}
+
+async function toBase64(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  for (let at = 0; at < bytes.length; at += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000))
+  }
+  return btoa(binary)
+}
+
+async function uploadBundle(rawItems) {
+  const items = stripCommonRoot(rawItems.filter((it) => BUNDLE_OK.test(it.path)))
+  const dropped = rawItems.length - items.length
+
+  if (!items.length) return toast('올릴 수 있는 파일이 폴더에 없습니다.', 'error')
+  if (items.length > MAX_BUNDLE_FILES) {
+    return toast(`파일이 너무 많습니다. (${items.length}개 · 한도 ${MAX_BUNDLE_FILES}개)`, 'error')
+  }
+  const total = items.reduce((sum, it) => sum + it.file.size, 0)
+  if (total > MAX_BUNDLE_BYTES) {
+    return toast(`너무 큽니다. (${Math.round(total / 1024 / 1024)} MB · 한도 40 MB)`, 'error')
+  }
+
+  const candidates = entryCandidates(items)
+  if (!candidates.length) return toast('폴더 안에 HTML 이 없습니다.', 'error')
+
+  const entry = await askEntry(candidates, items)
+  if (!entry) return
+
+  toast(`${items.length}개 읽는 중…`)
+  try {
+    const files = []
+    for (const it of items) files.push({ path: it.path, content: await toBase64(it.file) })
+    const { post } = await api('POST', '/api/posts/bundle', {
+      entry,
+      files,
+      folderId: state.activeFolderId,
+    })
+    await refresh()
+    select(post.id)
+    toast(
+      `"${post.title}" 올렸습니다. 파일 ${items.length}개` +
+        (dropped ? ` (받지 않는 ${dropped}개는 뺐습니다)` : ''),
+    )
+  } catch (err) {
+    toast(err.message, 'error')
   }
 }
 
@@ -1269,6 +1422,15 @@ el.accountPop.addEventListener('click', (e) => {
   if (action === 'list-users') listUsers()
 })
 
+$('newBundleBtn').addEventListener('click', () => {
+  el.folderPicker.value = ''
+  el.folderPicker.click()
+})
+
+el.folderPicker.addEventListener('change', () => {
+  if (el.folderPicker.files.length) uploadBundle(fromDirectoryInput(el.folderPicker.files))
+})
+
 el.picker.addEventListener('change', () => {
   const files = el.picker.files
   if (!files.length) return
@@ -1326,9 +1488,20 @@ window.addEventListener('dragover', (e) => {
   showDropZone()
 })
 
-window.addEventListener('drop', (e) => {
+window.addEventListener('drop', async (e) => {
   e.preventDefault()
   hideDropZone()
+
+  // 폴더를 떨구면 dataTransfer.files 에는 쓸 것이 안 들어온다. items 로 들어가야 안이 보인다.
+  const entries = [...(e.dataTransfer.items ?? [])]
+    .map((item) => item.webkitGetAsEntry?.())
+    .filter(Boolean)
+
+  if (entries.some((entry) => entry.isDirectory)) {
+    const items = []
+    for (const entry of entries) items.push(...(await walkEntry(entry)))
+    return uploadBundle(items)
+  }
   if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files)
 })
 

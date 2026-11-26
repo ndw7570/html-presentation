@@ -1,6 +1,7 @@
 import express from 'express'
 import path from 'node:path'
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import * as store from './lib/store.js'
 import * as users from './lib/users.js'
@@ -9,6 +10,7 @@ import * as linkCookie from './lib/link-cookie.js'
 import { extractTitle, normalizeLabel, ensureCharset, injectHead } from './lib/html.js'
 import { bridgeScript } from './lib/bridge.js'
 import { scanStorageUse } from './lib/storage-scan.js'
+import * as bundle from './lib/bundle.js'
 import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
 import { folderSharePage, noPreviewPage } from './lib/folder-share-page.js'
@@ -105,8 +107,15 @@ async function renderPost(post, { canWrite = false } = {}) {
     return { body: noPreviewPage(post), type: 'text/html; charset=utf-8', sandbox: true }
   }
 
-  const source = await store.readSource(post.id, post.kind)
   const bridge = bridgeScript({ state: await store.readState(post.id), canWrite })
+
+  // 묶음은 폴더다. 첫 화면 하나만 여기서 그리고, 나머지는 하위 주소로 따로 나간다.
+  if (post.kind === 'bundle') {
+    const html = await store.readBundleEntry(post.id, post.entry)
+    return { body: injectHead(html, bridge), type: 'text/html; charset=utf-8', sandbox: true }
+  }
+
+  const source = await store.readSource(post.id, post.kind)
 
   if (post.kind === 'drawio') {
     const body = injectHead(drawioPage({ title: post.title, xml: source }), bridge)
@@ -413,6 +422,52 @@ function sendDeck(res, { body, type, sandbox }) {
   res.send(body)
 }
 
+/**
+ * 묶음 안의 파일 하나를 보낸다. 없으면 false.
+ *
+ * **종류를 가리지 않고 격리 헤더를 붙인다.** 안에 든 HTML 은 새 탭으로도 열릴 수 있는데,
+ * 거기서 헤더가 빠지면 남이 올린 코드가 이 사이트 출처로 돌아 쿠키에 닿는다.
+ */
+async function sendBundleFile(res, post, rel, { canWrite = false } = {}) {
+  const checked = bundle.safePath(rel)
+  if (checked.error) return false
+  const file = store.bundleFile(post.id, checked.path)
+  if (!file || !existsSync(file)) return false
+
+  if (bundle.isHtml(checked.path)) {
+    const html = await readFile(file, 'utf8')
+    const bridge = bridgeScript({ state: await store.readState(post.id), canWrite })
+    sendDeck(res, { body: injectHead(html, bridge), type: 'text/html; charset=utf-8', sandbox: true })
+    return true
+  }
+
+  await new Promise((resolve, reject) => {
+    res.sendFile(file, {
+      dotfiles: 'deny',
+      headers: {
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-cache',
+        'X-Robots-Tag': 'noindex, nofollow',
+        'Content-Security-Policy': RAW_SANDBOX,
+      },
+    }, (err) => (err ? reject(err) : resolve()))
+  })
+  return true
+}
+
+/**
+ * 묶음은 **끝에 슬래시가 있어야** 한다.
+ * /p/<id> 에서 img/a.png 는 /p/img/a.png 로 풀린다. /p/<id>/ 라야 /p/<id>/img/a.png 가 된다.
+ */
+function needsBundleSlash(req, post) {
+  return post.kind === 'bundle' && !req.path.endsWith('/')
+}
+
+function redirectToBundleRoot(req, res, base) {
+  const query = req.originalUrl.split('?')[1]
+  res.redirect(base + '/' + (query ? '?' + query : ''))
+}
+
 /* ---------- 공유 (로그인 없이 열린다. 읽기 전용) ---------- */
 
 /** 공유 주소가 가리키는 글. 없거나 공유가 꺼져 있으면 null 을 주고 404 를 보낸다. */
@@ -441,7 +496,23 @@ app.get('/s/:token/raw', async (req, res, next) => {
   try {
     const post = withSharedPost(req, res)
     if (!post) return
+    if (needsBundleSlash(req, post)) {
+      return redirectToBundleRoot(req, res, `/s/${post.shareToken}/raw`)
+    }
     sendDeck(res, await renderPost(post))
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.get('/s/:token/raw/*', async (req, res, next) => {
+  try {
+    const post = withSharedPost(req, res)
+    if (!post) return
+    if (post.kind !== 'bundle') return notFound(res, '폴더형 자료가 아닙니다.')
+    const rel = req.params[0] ?? ''
+    if (!rel) return sendDeck(res, await renderPost(post))
+    if (!(await sendBundleFile(res, post, rel))) notFound(res, '없는 파일입니다.')
   } catch (err) {
     next(err)
   }
@@ -505,7 +576,23 @@ app.get('/f/:token/:postId/raw', async (req, res, next) => {
   try {
     const post = withPostInSharedFolder(req, res)
     if (!post) return
+    if (needsBundleSlash(req, post)) {
+      return redirectToBundleRoot(req, res, `/f/${req.params.token}/${post.id}/raw`)
+    }
     sendDeck(res, await renderPost(post))
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.get('/f/:token/:postId/raw/*', async (req, res, next) => {
+  try {
+    const post = withPostInSharedFolder(req, res)
+    if (!post) return
+    if (post.kind !== 'bundle') return notFound(res, '폴더형 자료가 아닙니다.')
+    const rel = req.params[0] ?? ''
+    if (!rel) return sendDeck(res, await renderPost(post))
+    if (!(await sendBundleFile(res, post, rel))) notFound(res, '없는 파일입니다.')
   } catch (err) {
     next(err)
   }
@@ -515,6 +602,7 @@ app.get('/f/:token/:postId/download', async (req, res, next) => {
   try {
     const post = withPostInSharedFolder(req, res)
     if (!post) return
+    if (post.kind === 'bundle') return notFound(res, '폴더형 자료는 내려받을 수 없습니다.')
     const ext = store.fileExtension(post.kind)
     res.set('Content-Disposition', `attachment; filename="${post.id}.${ext}"`)
     res.type(ext).send(await store.readSource(post.id, post.kind))
@@ -691,20 +779,20 @@ app.delete('/api/folders/:id/purge', requireLogin, async (req, res, next) => {
   }
 })
 
+/** 올릴 자리. 이름으로 준 쪽이 우선이다 - AI 는 보통 이쪽만 쓴다. */
+async function pickFolder({ folderId, folderPath }) {
+  if (typeof folderPath === 'string') return resolveFolderPath(folderPath)
+  const folder = resolveFolderId(folderId)
+  return folder === undefined ? { error: '없는 폴더입니다.' } : { folderId: folder }
+}
+
 app.post('/api/posts', requireLoginOrToken, async (req, res, next) => {
   try {
-    const { title, html, filename, folderId, folderPath } = req.body ?? {}
+    const { title, html, filename } = req.body ?? {}
 
-    // 이름으로 준 쪽이 우선이다. AI 는 보통 이쪽만 쓴다.
-    let folder
-    if (typeof folderPath === 'string') {
-      const resolved = await resolveFolderPath(folderPath)
-      if (resolved.error) return res.status(400).json({ error: resolved.error })
-      folder = resolved.folderId
-    } else {
-      folder = resolveFolderId(folderId)
-      if (folder === undefined) return res.status(400).json({ error: '없는 폴더입니다.' })
-    }
+    const where = await pickFolder(req.body ?? {})
+    if (where.error) return res.status(400).json({ error: where.error })
+    const folder = where.folderId
 
     const prepared = prepareUpload(html, filename)
     if (prepared.error) return res.status(400).json({ error: prepared.error })
@@ -715,6 +803,71 @@ app.post('/api/posts', requireLoginOrToken, async (req, res, next) => {
       kind: prepared.kind,
       storage: prepared.scan ?? [],
       folderId: folder,
+    })
+    res.status(201).json({ post })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/*
+ * 폴더째 올리기.
+ *
+ * 94개를 한 요청에 담는다. 나눠 보내면 중간에 끊겼을 때 **반쪽짜리 자료가 목록에 남는다.**
+ * 한 번에 받아 임시 폴더에 다 쓴 뒤 제자리로 옮기면 그런 상태가 생기지 않는다.
+ * 내용은 전부 base64 로 받는다 - 그림과 글자를 같은 길로 보내려면 그게 제일 단순하다.
+ */
+app.post('/api/posts/bundle', requireLoginOrToken, async (req, res, next) => {
+  try {
+    const { title, entry, files } = req.body ?? {}
+
+    if (!Array.isArray(files) || !files.length) {
+      return res.status(400).json({ error: '파일이 없습니다.' })
+    }
+    if (files.length > bundle.MAX_FILES) {
+      return res.status(400).json({ error: `파일이 너무 많습니다. (한도 ${bundle.MAX_FILES}개)` })
+    }
+
+    const where = await pickFolder(req.body ?? {})
+    if (where.error) return res.status(400).json({ error: where.error })
+
+    const prepared = []
+    const seen = new Set()
+    for (const raw of files) {
+      const checked = bundle.safePath(raw?.path)
+      if (checked.error) return res.status(400).json({ error: checked.error })
+      // 윈도우·맥은 대소문자를 안 가린다. 같은 자리에 두 번 쓰면 하나가 조용히 사라진다.
+      const key = checked.path.toLowerCase()
+      if (seen.has(key)) {
+        return res.status(400).json({ error: `같은 파일이 두 번 있습니다: ${checked.path}` })
+      }
+      seen.add(key)
+
+      let bytes = Buffer.from(String(raw?.content ?? ''), 'base64')
+      // 문자셋 선언이 없으면 한글이 깨진다. 파일 하나짜리 업로드와 같은 처리를 한다.
+      if (bundle.isHtml(checked.path)) {
+        bytes = Buffer.from(ensureCharset(bytes.toString('utf8')), 'utf8')
+      }
+      prepared.push({ path: checked.path, bytes })
+    }
+
+    const entryCheck = bundle.safePath(entry)
+    if (entryCheck.error || !bundle.isHtml(entryCheck.path)) {
+      return res.status(400).json({ error: '첫 화면은 HTML 이어야 합니다.' })
+    }
+    const entryFile = prepared.find((f) => f.path === entryCheck.path)
+    if (!entryFile) return res.status(400).json({ error: '첫 화면으로 고른 파일이 묶음에 없습니다.' })
+
+    const entryHtml = entryFile.bytes.toString('utf8')
+    const post = await store.createBundle({
+      title: normalizeLabel(
+        title || extractTitle(entryHtml) || baseName(entryCheck.path),
+        '제목 없는 발표',
+      ),
+      entry: entryCheck.path,
+      files: prepared,
+      folderId: where.folderId,
+      storage: scanStorageUse(entryHtml),
     })
     res.status(201).json({ post })
   } catch (err) {
@@ -832,8 +985,24 @@ app.get('/p/:id', requireLogin, async (req, res, next) => {
   try {
     const post = withPost(req, res)
     if (!post) return
+    if (needsBundleSlash(req, post)) return redirectToBundleRoot(req, res, `/p/${post.id}`)
     // 로그인해서 보는 자리에서만 자료가 상태를 저장할 수 있다.
     sendDeck(res, await renderPost(post, { canWrite: true }))
+  } catch (err) {
+    next(err)
+  }
+})
+
+app.get('/p/:id/*', requireLogin, async (req, res, next) => {
+  try {
+    const post = withPost(req, res)
+    if (!post) return
+    if (post.kind !== 'bundle') return notFound(res, '폴더형 자료가 아닙니다.')
+    const rel = req.params[0] ?? ''
+    if (!rel) return sendDeck(res, await renderPost(post, { canWrite: true }))
+    if (!(await sendBundleFile(res, post, rel, { canWrite: true }))) {
+      notFound(res, '없는 파일입니다.')
+    }
   } catch (err) {
     next(err)
   }
@@ -843,6 +1012,10 @@ app.get('/download/:id', requireLogin, async (req, res, next) => {
   try {
     const post = withPost(req, res)
     if (!post) return
+    // 묶음은 파일이 여럿이라 한 파일로 줄 수 없다. 압축은 아직 안 만들었다.
+    if (post.kind === 'bundle') {
+      return res.status(409).json({ error: '폴더형 자료는 내려받을 수 없습니다.' })
+    }
     // 내려받을 때는 변환물이 아니라 올린 원본을 준다.
     const ext = store.fileExtension(post.kind)
     res.set('Content-Disposition', `attachment; filename="${post.id}.${ext}"`)
