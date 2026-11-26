@@ -1324,3 +1324,56 @@ a.link-btn {
 
 .trash-row-acts { display: flex; gap: 6px; }
 .trash-row-acts .btn { flex: 1; }
+
+/* ---------- 묶음(폴더째 올린 자료) ---------- */
+
+.bundle-btn {
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dim, #9aa3b2);
+  background: transparent;
+  border: 1px dashed #343a46;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.bundle-btn:hover { color: #e6e9ef; border-color: #4a5263; background: #22262e; }
+
+.entry-dialog {
+  width: min(560px, 92vw);
+  padding: 0;
+  color: #e6e9ef;
+  background: #1b1e24;
+  border: 1px solid #343a46;
+  border-radius: 12px;
+}
+.entry-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.entry-dialog form { padding: 20px; }
+.entry-dialog h2 { margin: 0 0 4px; font-size: 16px; }
+.entry-sub { margin: 0 0 14px; font-size: 13px; color: #9aa3b2; }
+
+/* 11개쯤 나올 수 있다. 넘치면 창이 화면 밖으로 자란다. */
+.entry-list { max-height: 46vh; overflow: auto; margin-bottom: 16px; }
+
+.entry-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  font-size: 13px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.entry-row:hover { background: #22262e; }
+.entry-row span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry-row small { color: #7b8494; }
+
+.entry-dialog menu {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
