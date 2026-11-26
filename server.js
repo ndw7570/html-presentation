@@ -11,6 +11,7 @@ import { extractTitle, normalizeLabel, ensureCharset, injectHead } from './lib/h
 import { bridgeScript } from './lib/bridge.js'
 import { scanStorageUse } from './lib/storage-scan.js'
 import * as bundle from './lib/bundle.js'
+import { makeZip } from './lib/zip.js'
 import { renderMarkdown, extractMarkdownTitle } from './lib/markdown.js'
 import { sharePage } from './lib/share-page.js'
 import { folderSharePage, noPreviewPage } from './lib/folder-share-page.js'
@@ -459,6 +460,25 @@ async function sendBundleFile(res, post, rel, { canWrite = false } = {}) {
  * 묶음은 **끝에 슬래시가 있어야** 한다.
  * /p/<id> 에서 img/a.png 는 /p/img/a.png 로 풀린다. /p/<id>/ 라야 /p/<id>/img/a.png 가 된다.
  */
+/**
+ * 묶음을 zip 하나로 보낸다.
+ * 파일 이름은 글 제목을 쓴다 - <id>.zip 으로 주면 받아 놓고 뭐가 뭔지 알 수 없다.
+ */
+async function sendBundleZip(res, post) {
+  const files = await store.readBundleFiles(post.id)
+  const zip = makeZip(files, new Date(post.updatedAt))
+  // 제목에 경로 글자나 따옴표가 들어가면 헤더가 깨진다. 안전한 글자만 남긴다.
+  const safe = (post.title || post.id).replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 80).trim()
+  res.set({
+    'Content-Type': 'application/zip',
+    'X-Content-Type-Options': 'nosniff',
+    // 한글 제목은 filename* 쪽으로 읽힌다. filename= 은 못 읽는 옛 브라우저용이다.
+    'Content-Disposition':
+      `attachment; filename="${post.id}.zip"; filename*=UTF-8''${encodeURIComponent(safe)}.zip`,
+  })
+  res.send(zip)
+}
+
 function needsBundleSlash(req, post) {
   return post.kind === 'bundle' && !req.path.endsWith('/')
 }
@@ -602,7 +622,7 @@ app.get('/f/:token/:postId/download', async (req, res, next) => {
   try {
     const post = withPostInSharedFolder(req, res)
     if (!post) return
-    if (post.kind === 'bundle') return notFound(res, '폴더형 자료는 내려받을 수 없습니다.')
+    if (post.kind === 'bundle') return void (await sendBundleZip(res, post))
     const ext = store.fileExtension(post.kind)
     res.set('Content-Disposition', `attachment; filename="${post.id}.${ext}"`)
     res.type(ext).send(await store.readSource(post.id, post.kind))
@@ -1012,10 +1032,8 @@ app.get('/download/:id', requireLogin, async (req, res, next) => {
   try {
     const post = withPost(req, res)
     if (!post) return
-    // 묶음은 파일이 여럿이라 한 파일로 줄 수 없다. 압축은 아직 안 만들었다.
-    if (post.kind === 'bundle') {
-      return res.status(409).json({ error: '폴더형 자료는 내려받을 수 없습니다.' })
-    }
+    // 묶음은 파일이 여럿이라 zip 으로 묶어 준다.
+    if (post.kind === 'bundle') return void (await sendBundleZip(res, post))
     // 내려받을 때는 변환물이 아니라 올린 원본을 준다.
     const ext = store.fileExtension(post.kind)
     res.set('Content-Disposition', `attachment; filename="${post.id}.${ext}"`)
