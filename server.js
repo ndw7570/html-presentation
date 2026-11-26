@@ -2,6 +2,7 @@ import express from 'express'
 import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import * as store from './lib/store.js'
 import * as users from './lib/users.js'
@@ -477,6 +478,31 @@ async function sendBundleZip(res, post) {
       `attachment; filename="${post.id}.zip"; filename*=UTF-8''${encodeURIComponent(safe)}.zip`,
   })
   res.send(zip)
+}
+
+function sameToken(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b))
+}
+
+/**
+ * 게시판에서 묶음을 볼 때 쓰는 주소. **로그인 검사를 하지 않는다.**
+ *
+ * 자료는 격리돼 불투명 출처다. 그 안에서 나가는 요청을 브라우저가 "다른 사이트"로 쳐서
+ * SameSite=Lax 인 세션 쿠키를 빼 버린다(실측: SchemefulSameSiteLax 로 막힘).
+ * 쿠키로는 통과시킬 방법이 없고, 쿠키를 SameSite=None 으로 풀면 사이트 전체의 CSRF
+ * 방어가 깎인다. 그래서 **맞히기 어려운 주소**로 연다 - 공유 토큰과 같은 128비트다.
+ *
+ * 공유 토큰을 재사용하지 않는 이유: 공유를 꺼도 게시판에서는 보여야 하고,
+ * 반대로 미리보기 주소가 샜다고 공유 주소까지 바꿀 일은 아니다.
+ */
+function withPreviewPost(req, res) {
+  const { id, token } = req.params
+  const post = store.isValidId(id) && store.isValidShareToken(token) ? store.get(id) : null
+  if (!post || post.kind !== 'bundle' || !sameToken(post.previewToken, token)) {
+    return notFound(res, '없는 주소입니다.')
+  }
+  return post
 }
 
 function needsBundleSlash(req, post) {
@@ -1005,7 +1031,10 @@ app.get('/p/:id', requireLogin, async (req, res, next) => {
   try {
     const post = withPost(req, res)
     if (!post) return
-    if (needsBundleSlash(req, post)) return redirectToBundleRoot(req, res, `/p/${post.id}`)
+    // 묶음은 하위 파일까지 열려야 해서 쿠키가 안 통한다. 열쇠가 든 주소로 넘긴다.
+    if (post.kind === 'bundle') {
+      return redirectToBundleRoot(req, res, `/pv/${post.id}/${post.previewToken}`)
+    }
     // 로그인해서 보는 자리에서만 자료가 상태를 저장할 수 있다.
     sendDeck(res, await renderPost(post, { canWrite: true }))
   } catch (err) {
@@ -1013,12 +1042,16 @@ app.get('/p/:id', requireLogin, async (req, res, next) => {
   }
 })
 
-app.get('/p/:id/*', requireLogin, async (req, res, next) => {
+/*
+ * 와일드카드를 먼저 건다. express 는 끝 슬래시를 무시하므로 /pv/a/b 쪽을 먼저 걸면
+ * /pv/a/b/ 가 거기 걸려 자기 자신으로 넘어간다 - 무한히 돈다(이미 한 번 밟았다).
+ */
+app.get('/pv/:id/:token/*', async (req, res, next) => {
   try {
-    const post = withPost(req, res)
+    const post = withPreviewPost(req, res)
     if (!post) return
-    if (post.kind !== 'bundle') return notFound(res, '폴더형 자료가 아닙니다.')
     const rel = req.params[0] ?? ''
+    // 게시판에서 보는 자리라 자료가 상태를 저장할 수 있다. 저장은 부모 창이 제 세션으로 한다.
     if (!rel) return sendDeck(res, await renderPost(post, { canWrite: true }))
     if (!(await sendBundleFile(res, post, rel, { canWrite: true }))) {
       notFound(res, '없는 파일입니다.')
@@ -1026,6 +1059,12 @@ app.get('/p/:id/*', requireLogin, async (req, res, next) => {
   } catch (err) {
     next(err)
   }
+})
+
+app.get('/pv/:id/:token', (req, res) => {
+  const post = withPreviewPost(req, res)
+  if (!post) return
+  redirectToBundleRoot(req, res, `/pv/${post.id}/${post.previewToken}`)
 })
 
 app.get('/download/:id', requireLogin, async (req, res, next) => {
