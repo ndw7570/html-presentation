@@ -540,8 +540,9 @@ function renderStage() {
     (post.files ? `파일 ${post.files}개 · ` : '') +
     `${Math.max(1, Math.round(post.bytes / 1024))} KB` +
     (post.shared ? '' : ' · 공유 꺼짐')
-  // 묶음은 파일이 여럿이라 한 파일로 내려줄 수 없다.
-  document.querySelector('[data-action="download"]').hidden = post.kind === 'bundle'
+  // 묶음은 파일이 여럿이라 zip 으로 나간다. 단추 글씨로 그걸 미리 알려 준다.
+  document.querySelector('[data-action="download"]').textContent =
+    post.kind === 'bundle' ? 'zip 으로 내려받기' : '원본 내려받기'
   el.toggleShare.textContent = post.shared ? '공유 끄기' : '공유 켜기'
   renderFolderSelect(post)
   applySandbox(post)
