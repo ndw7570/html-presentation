@@ -26,7 +26,7 @@ const el = {
   notesBtn: $('notesBtn'),
   storageNotice: $('storageNotice'),
   viewTabs: $('viewTabs'),
-  treeTools: $('treeTools'),
+  collapseAllBtn: $('collapseAllBtn'),
   trashCount: $('trashCount'),
   trashBar: $('trashBar'),
   deleteItem: $('deleteItem'),
@@ -164,6 +164,17 @@ function setAllCollapsed(collapsed) {
     : new Set()
   rememberCollapsed()
   renderList()
+}
+
+/**
+ * 버튼 하나로 접고 편다. 둘을 나란히 두면 늘 하나는 할 일이 없는 버튼이 된다 -
+ * 하나라도 접혀 있으면 "펴기"가, 다 펴져 있으면 "접기"가 다음에 할 일이다.
+ */
+function syncCollapseAll() {
+  const anyCollapsed = state.collapsed.size > 0
+  el.collapseAllBtn.textContent = anyCollapsed ? '⊞' : '⊟'
+  el.collapseAllBtn.title = anyCollapsed ? '폴더 모두 펼치기' : '폴더 모두 접기'
+  el.collapseAllBtn.setAttribute('aria-label', el.collapseAllBtn.title)
 }
 
 /* ---------- 사이드바 ---------- */
@@ -349,7 +360,8 @@ function renderSearchResults(query) {
 
 /** 켜진 탭과 휴지통 개수를 지금 상태에 맞춘다. 목록을 그릴 때마다 같이 맞춘다. */
 function syncViewTabs() {
-  for (const tab of el.viewTabs.querySelectorAll('button')) {
+  // 같은 줄에 탭이 아닌 버튼(접기 토글)이 섞여 있다. data-view 가 탭의 표식이다.
+  for (const tab of el.viewTabs.querySelectorAll('button[data-view]')) {
     tab.classList.toggle('on', tab.dataset.view === state.view)
   }
   // 폴더 하나와 그 안의 글 수십 개를 따로 세면 숫자가 겁을 준다. 바깥에서 지운 것만 센다.
@@ -366,7 +378,8 @@ function renderList() {
 
   const query = state.query.trim().toLowerCase()
   // 검색 결과와 휴지통은 폴더 트리가 아니다. 접을 것이 없는데 버튼만 있으면 눌러 보게 된다.
-  el.treeTools.hidden = Boolean(query) || state.view === 'trash'
+  el.collapseAllBtn.hidden = Boolean(query) || state.view === 'trash'
+  syncCollapseAll()
   if (query) return renderSearchResults(query)
 
   if (state.view === 'trash') return renderTrash()
@@ -1438,10 +1451,9 @@ el.accountPop.addEventListener('click', (e) => {
   if (action === 'list-users') listUsers()
 })
 
-$('collapseAllBtn').addEventListener('click', () => setAllCollapsed(true))
-$('expandAllBtn').addEventListener('click', () => setAllCollapsed(false))
+el.collapseAllBtn.addEventListener('click', () => setAllCollapsed(state.collapsed.size === 0))
 
-$('newBundleBtn').addEventListener('click', () => {
+$('emptyFolderBtn').addEventListener('click', () => {
   el.folderPicker.value = ''
   el.folderPicker.click()
 })
