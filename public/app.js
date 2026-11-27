@@ -29,7 +29,8 @@ const el = {
   storageNotice: $('storageNotice'),
   viewTabs: $('viewTabs'),
   collapseAllBtn: $('collapseAllBtn'),
-  navToggleBtn: $('navToggleBtn'),
+  navHideBtn: $('navHideBtn'),
+  navShowBtn: $('navShowBtn'),
   trashCount: $('trashCount'),
   trashBar: $('trashBar'),
   deleteItem: $('deleteItem'),
@@ -185,10 +186,10 @@ function syncCollapseAll() {
 
 function applyNav() {
   el.app.classList.toggle('nav-hidden', state.navHidden)
-  const label = state.navHidden ? '메뉴 보이기' : '메뉴 숨기기'
-  el.navToggleBtn.setAttribute('aria-expanded', String(!state.navHidden))
-  el.navToggleBtn.setAttribute('aria-label', label)
-  el.navToggleBtn.title = `${label} (B)`
+  // 두 버튼은 한 번에 하나만 보이지만, 읽어 주는 상태는 둘 다 맞춰 둔다.
+  for (const btn of [el.navHideBtn, el.navShowBtn]) {
+    btn.setAttribute('aria-expanded', String(!state.navHidden))
+  }
 }
 
 function toggleNav(hidden = !state.navHidden) {
@@ -1474,7 +1475,8 @@ el.accountPop.addEventListener('click', (e) => {
 })
 
 el.collapseAllBtn.addEventListener('click', () => setAllCollapsed(state.collapsed.size === 0))
-el.navToggleBtn.addEventListener('click', () => toggleNav())
+el.navHideBtn.addEventListener('click', () => toggleNav(true))
+el.navShowBtn.addEventListener('click', () => toggleNav(false))
 
 $('emptyFolderBtn').addEventListener('click', () => {
   el.folderPicker.value = ''
