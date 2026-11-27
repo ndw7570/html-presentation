@@ -29,8 +29,7 @@ const el = {
   storageNotice: $('storageNotice'),
   viewTabs: $('viewTabs'),
   collapseAllBtn: $('collapseAllBtn'),
-  navHideBtn: $('navHideBtn'),
-  navShowBtn: $('navShowBtn'),
+  navToggleBtn: $('navToggleBtn'),
   trashCount: $('trashCount'),
   trashBar: $('trashBar'),
   deleteItem: $('deleteItem'),
@@ -186,8 +185,10 @@ function syncCollapseAll() {
 
 function applyNav() {
   el.app.classList.toggle('nav-hidden', state.navHidden)
-  el.navHideBtn.setAttribute('aria-expanded', String(!state.navHidden))
-  el.navShowBtn.setAttribute('aria-expanded', String(!state.navHidden))
+  const label = state.navHidden ? '메뉴 보이기' : '메뉴 숨기기'
+  el.navToggleBtn.setAttribute('aria-expanded', String(!state.navHidden))
+  el.navToggleBtn.setAttribute('aria-label', label)
+  el.navToggleBtn.title = `${label} (B)`
 }
 
 function toggleNav(hidden = !state.navHidden) {
@@ -1473,8 +1474,7 @@ el.accountPop.addEventListener('click', (e) => {
 })
 
 el.collapseAllBtn.addEventListener('click', () => setAllCollapsed(state.collapsed.size === 0))
-el.navHideBtn.addEventListener('click', () => toggleNav(true))
-el.navShowBtn.addEventListener('click', () => toggleNav(false))
+el.navToggleBtn.addEventListener('click', () => toggleNav())
 
 $('emptyFolderBtn').addEventListener('click', () => {
   el.folderPicker.value = ''
