@@ -19,10 +19,14 @@
 
 <div class="app">
   <aside class="sidebar" id="sidebar">
-    <button class="brand" id="homeBtn" title="홈 — 파일 올리는 화면으로">
-      <span class="brand-mark">▶</span>
-      <span class="brand-name">발표 게시판</span>
-    </button>
+    <!-- 로고와 접기는 형제여야 한다. 버튼 안에 버튼은 못 넣는다. -->
+    <div class="side-top">
+      <button class="brand" id="homeBtn" title="홈 - 파일 올리는 화면으로">
+        <span class="brand-mark">▶</span>
+        <span class="brand-name">발표 게시판</span>
+      </button>
+      <button class="nav-hide" id="navHideBtn" title="메뉴 숨기기 (B)" aria-label="메뉴 숨기기">⟨</button>
+    </div>
 
     <div class="side-actions">
       <button class="new-btn" id="newBtn">+ 새 발표 올리기</button>
@@ -46,7 +50,7 @@
     <nav class="post-list" id="postList" aria-label="발표 목록"></nav>
 
     <div class="sidebar-foot">
-      <div class="keys"><kbd>/</kbd> 검색 · <kbd>N</kbd> 올리기 · <kbd>F</kbd> 발표</div>
+      <div class="keys"><kbd>/</kbd> 검색 · <kbd>N</kbd> 올리기 · <kbd>F</kbd> 발표 · <kbd>B</kbd> 메뉴</div>
       <div class="account">
         <span id="whoami"></span>
         <a class="link-btn" href="/tokens">API 토큰</a>
@@ -152,6 +156,12 @@
     </div>
   </main>
 </div>
+
+<!--
+  메뉴를 숨기면 되돌릴 버튼도 같이 사라지는 것이 이 기능의 유일한 함정이다.
+  그래서 되돌릴 버튼은 .app 밖에 두고 늘 같은 자리(왼쪽 위)에 띄운다.
+-->
+<button class="nav-show" id="navShowBtn" title="메뉴 보이기 (B)" aria-label="메뉴 보이기">☰</button>
 
 <div class="menu-pop floating" id="folderPop" hidden>
   <button data-action="folder-sub">하위 폴더 추가</button>

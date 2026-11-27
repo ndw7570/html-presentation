@@ -3,6 +3,8 @@ const $ = (id) => document.getElementById(id)
 const UNFILED = '미분류'
 const COLLAPSED_KEY = 'collapsedFolders'
 const NOTES_OPEN_KEY = 'notesOpen'
+// 왼쪽 메뉴를 접어 뒀는지. 새로 고쳐도 그대로 둔다.
+const NAV_HIDDEN_KEY = 'navHidden'
 // 어느 보기를 보고 있었는지. 새로 고쳐도 그대로 둔다.
 const VIEW_KEY = 'listView'
 const NOTES_SAVE_MS = 800
@@ -27,6 +29,8 @@ const el = {
   storageNotice: $('storageNotice'),
   viewTabs: $('viewTabs'),
   collapseAllBtn: $('collapseAllBtn'),
+  navHideBtn: $('navHideBtn'),
+  navShowBtn: $('navShowBtn'),
   trashCount: $('trashCount'),
   trashBar: $('trashBar'),
   deleteItem: $('deleteItem'),
@@ -61,6 +65,7 @@ const state = {
   activeFolderId: null,
   collapsed: new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')),
   notesOpen: localStorage.getItem(NOTES_OPEN_KEY) === '1',
+  navHidden: localStorage.getItem(NAV_HIDDEN_KEY) === '1',
   query: '',
   username: null,
   pickerMode: 'create',
@@ -175,6 +180,22 @@ function syncCollapseAll() {
   el.collapseAllBtn.textContent = anyCollapsed ? '⊞' : '⊟'
   el.collapseAllBtn.title = anyCollapsed ? '폴더 모두 펼치기' : '폴더 모두 접기'
   el.collapseAllBtn.setAttribute('aria-label', el.collapseAllBtn.title)
+}
+
+/* ---------- 왼쪽 메뉴 접기 ---------- */
+
+function applyNav() {
+  el.app.classList.toggle('nav-hidden', state.navHidden)
+  el.navHideBtn.setAttribute('aria-expanded', String(!state.navHidden))
+  el.navShowBtn.setAttribute('aria-expanded', String(!state.navHidden))
+}
+
+function toggleNav(hidden = !state.navHidden) {
+  state.navHidden = hidden
+  localStorage.setItem(NAV_HIDDEN_KEY, hidden ? '1' : '0')
+  applyNav()
+  // 접었다 펴면 자료 폭이 바뀐다. 자료 쪽에서 크기를 다시 재야 할 수 있다.
+  dispatchEvent(new Event('resize'))
 }
 
 /* ---------- 사이드바 ---------- */
@@ -1452,6 +1473,8 @@ el.accountPop.addEventListener('click', (e) => {
 })
 
 el.collapseAllBtn.addEventListener('click', () => setAllCollapsed(state.collapsed.size === 0))
+el.navHideBtn.addEventListener('click', () => toggleNav(true))
+el.navShowBtn.addEventListener('click', () => toggleNav(false))
 
 $('emptyFolderBtn').addEventListener('click', () => {
   el.folderPicker.value = ''
@@ -1557,6 +1580,7 @@ document.addEventListener('keydown', (e) => {
   if (typing) return
   if (e.key === 'n' || e.key === 'N') openPicker('create')
   if (e.key === 'f' || e.key === 'F') present()
+  if (e.key === 'b' || e.key === 'B') toggleNav()
 })
 
 window.addEventListener('hashchange', () => {
@@ -1567,6 +1591,8 @@ window.addEventListener('hashchange', () => {
 /* ---------- 시작 ---------- */
 
 async function start() {
+  // 서버를 기다리기 전에 걸어 둔다. 접어 둔 사람에게 메뉴가 한 번 번쩍이면 안 된다.
+  applyNav()
   try {
     const { username } = await api('GET', '/api/me')
     if (!username) return location.replace('/login')
