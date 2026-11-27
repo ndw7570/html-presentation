@@ -53,30 +53,51 @@ kbd {
 .app.nav-hidden { grid-template-columns: 1fr; }
 .app.nav-hidden .sidebar { display: none; }
 
-/* 떠 있는 ☰ 가 제목을 덮지 않게 그만큼 비켜 준다. */
-.app.nav-hidden .toolbar { padding-left: 52px; }
+/* 떠 있는 버튼이 제목을 덮지 않게 그만큼 비켜 준다. */
+.app.nav-hidden .toolbar { padding-left: 54px; }
 
-.nav-show {
-  display: none;
+.nav-toggle {
   position: fixed;
-  top: 9px;
-  left: 10px;
+  top: 12px;
+  left: 11px;
   z-index: 40;
+  display: grid;
+  place-items: center;
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: #fff;
-  color: var(--ink-soft);
-  font-size: 15px;
-  line-height: 1;
+  background: none;
+  /* 펴져 있을 때는 어두운 사이드바 위에 뜬다. 흰 버튼을 올리면 혼자 튄다. */
+  color: #6c727d;
 }
 
-.nav-show:hover { color: var(--ink); border-color: #c8ccd4; }
+.nav-toggle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
 
-/* .app 의 형제라 접혔을 때만 켜진다. 접기 버튼과 한 쌍이라 둘이 같이 안 보인다. */
-.app.nav-hidden ~ .nav-show { display: block; }
+.nav-toggle .nav-pane {
+  stroke: none;
+  fill: currentColor;
+  opacity: .45;
+}
+
+.nav-toggle:hover { background: #1c1f26; color: #d4d8de; }
+
+/* 접으면 같은 버튼이 밝은 자료 화면 위로 올라온다. 색을 거기에 맞춘다. */
+.app.nav-hidden ~ .nav-toggle { color: var(--ink-soft); }
+.app.nav-hidden ~ .nav-toggle .nav-pane { opacity: 0; }
+
+.app.nav-hidden ~ .nav-toggle:hover {
+  background: #eef0f4;
+  border-color: var(--line);
+  color: var(--ink);
+}
 
 /* ---------- 사이드바 ---------- */
 
@@ -88,29 +109,13 @@ kbd {
   color: #e6e8ec;
 }
 
-.side-top { display: flex; align-items: flex-start; }
-
-.nav-hide {
-  flex: 0 0 auto;
-  margin: 14px 10px 0 0;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: #6c727d;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.nav-hide:hover { background: #1c1f26; color: #d4d8de; }
-
 .brand {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
-  min-width: 0;
-  padding: 18px 18px 14px;
+  width: 100%;
+  /* 왼쪽 54px 은 떠 있는 접기 버튼 자리다. */
+  padding: 18px 18px 14px 54px;
   border: 0;
   background: none;
   color: inherit;
@@ -1131,8 +1136,8 @@ a.link-btn {
   .app.nav-hidden { grid-template-columns: 1fr; }
   .app.nav-hidden .sidebar { display: flex; }
   .app.nav-hidden .toolbar { padding-left: 18px; }
-  .nav-hide,
-  .app.nav-hidden ~ .nav-show { display: none; }
+  .nav-toggle { display: none; }
+  .brand { padding-left: 18px; }
 
   .stage { display: none; }
   .app.viewing .sidebar { display: none; }
