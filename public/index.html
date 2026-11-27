@@ -28,11 +28,6 @@
       <button class="new-btn" id="newBtn">+ 새 발표 올리기</button>
       <button class="new-folder-btn" id="newFolderBtn" title="새 폴더 만들기">＋ 폴더</button>
     </div>
-    <!-- 분류용 "폴더" 와 헷갈리지 않게 파일 여러 개짜리 자료는 "묶음" 이라 부른다. -->
-    <button class="bundle-btn" id="newBundleBtn" title="img·proto 같은 하위 폴더를 끼고 있는 자료를 폴더째 올립니다">
-      ⬚ 묶음(폴더째) 올리기
-    </button>
-
     <div class="search">
       <input id="search" type="search" placeholder="검색  ( / )" autocomplete="off">
     </div>
@@ -41,12 +36,11 @@
       <button data-view="live" class="on">일반</button>
       <button data-view="all">전체</button>
       <button data-view="trash">휴지통 <span class="trash-count" id="trashCount" hidden></span></button>
-    </div>
-
-    <!-- 폴더가 늘면 하나씩 접는 것이 일이 된다. 트리가 안 보이는 보기에서는 숨긴다. -->
-    <div class="tree-tools" id="treeTools">
-      <button class="tree-tool" id="collapseAllBtn" title="폴더를 모두 접습니다">⊟ 모두 접기</button>
-      <button class="tree-tool" id="expandAllBtn" title="폴더를 모두 펼칩니다">⊞ 모두 펼치기</button>
+      <!--
+        폴더가 늘면 하나씩 접는 것이 일이 된다. 보기 탭과 같은 줄에 두되 테두리를 빼
+        탭으로 안 보이게 한다. 트리가 아닌 보기(검색·휴지통)에서는 숨는다.
+      -->
+      <button class="tree-toggle" id="collapseAllBtn" aria-label="폴더 모두 접기"></button>
     </div>
 
     <nav class="post-list" id="postList" aria-label="발표 목록"></nav>
@@ -130,13 +124,27 @@
     <div class="empty" id="empty">
       <div class="empty-card">
         <div class="empty-icon">⬇</div>
-        <h2>파일을 끌어다 놓으세요</h2>
+        <h2>끌어다 놓으세요</h2>
         <p>
           <code>.html</code> <code>.md</code> <code>.pdf</code>
           <code>.svg</code> <code>.png</code> <code>.drawio</code><br>
           화면 어디에 놓아도 됩니다. 제목은 파일에서 자동으로 가져옵니다.
         </p>
-        <button class="btn primary" id="emptyBtn">파일 고르기</button>
+        <!--
+          폴더도 받는다는 것은 여기서만 말한다. 사이드바에 버튼으로 두면 1년에 몇 번
+          쓸 길이 주된 동작과 같은 크기로 앉는다. 이 카드는 글을 안 고른 상태면 늘
+          나오는 홈 화면이라, 목록이 차도 로고를 누르면 다시 여기로 온다.
+        -->
+        <div class="empty-actions">
+          <button class="btn primary" id="emptyBtn">파일 고르기</button>
+          <button class="btn" id="emptyFolderBtn" title="img·proto 같은 하위 폴더를 끼고 있는 자료를 폴더째 올립니다">
+            폴더 고르기
+          </button>
+        </div>
+        <p class="empty-note">
+          <strong>폴더째</strong> 놓거나 골라도 됩니다.<br>
+          img·proto 같은 하위 폴더까지 "묶음" 으로 함께 올라갑니다.
+        </p>
         <p class="empty-alt">
           AI 나 스크립트로 올리려면 <a href="/tokens">API 토큰</a> 을 발급하세요.
         </p>

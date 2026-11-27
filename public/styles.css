@@ -973,6 +973,21 @@ a.link-btn {
   color: var(--ink-soft);
 }
 
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+/* 폴더째 올릴 수 있다는 것은 이 한 줄이 유일한 안내다. 버튼 바로 밑에 붙인다. */
+.empty-note {
+  margin: 10px 0 0 !important;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.empty-note strong { color: var(--ink); }
+
 /* 드래그가 안 되는 상황(AI·스크립트)에서 갈 곳을 같은 자리에 둔다. */
 .empty-alt {
   margin: 16px 0 0 !important;
@@ -1243,26 +1258,25 @@ a.link-btn {
   font-weight: 600;
 }
 
-/* 보기 탭과 목록 사이의 잔손질 줄. 탭만큼 커지면 탭과 헷갈린다 - 작고 흐리게. */
-.tree-tools {
-  display: flex;
-  gap: 2px;
-  justify-content: flex-end;
-  padding: 0 12px 6px;
-}
-
-.tree-tool {
-  padding: 2px 6px;
+/*
+  보기 탭 줄 끝의 잔손질 버튼. 탭과 같은 줄이지만 탭이 아니다 -
+  테두리를 빼고 폭을 고정해 셋으로 나뉘는 탭 계산(flex:1)에 끼어들지 않게 한다.
+*/
+/* .view-tabs button 의 flex:1 보다 세야 한다. 안 그러면 탭과 똑같이 1/4 을 먹는다(실측). */
+.view-tabs .tree-toggle {
+  flex: 0 0 auto;
+  width: 26px;
+  padding: 5px 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: none;
   color: #6c727d;
   font: inherit;
-  font-size: 11px;
-  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1;
 }
 
-.tree-tool:hover {
+.view-tabs .tree-toggle:hover {
   background: #1c1f26;
   color: #d4d8de;
 }
@@ -1350,20 +1364,6 @@ a.link-btn {
 .trash-row-acts .btn { flex: 1; }
 
 /* ---------- 묶음(폴더째 올린 자료) ---------- */
-
-.bundle-btn {
-  width: 100%;
-  margin: 0 0 10px;
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--dim, #9aa3b2);
-  background: transparent;
-  border: 1px dashed #343a46;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.bundle-btn:hover { color: #e6e9ef; border-color: #4a5263; background: #22262e; }
 
 .entry-dialog {
   width: min(560px, 92vw);
