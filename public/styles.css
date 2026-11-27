@@ -53,14 +53,11 @@ kbd {
 .app.nav-hidden { grid-template-columns: 1fr; }
 .app.nav-hidden .sidebar { display: none; }
 
-/* 떠 있는 버튼이 제목을 덮지 않게 그만큼 비켜 준다. */
+/* 접었을 때만 떠 있는 버튼이 툴바 위에 올라온다. 제목이 그 밑에 깔리면 안 된다. */
 .app.nav-hidden .toolbar { padding-left: 54px; }
 
-.nav-toggle {
-  position: fixed;
-  top: 12px;
-  left: 11px;
-  z-index: 40;
+/* 접기·펴기 두 버튼이 같은 모양이어야 같은 것으로 읽힌다. */
+.nav-btn {
   display: grid;
   place-items: center;
   width: 32px;
@@ -69,11 +66,9 @@ kbd {
   border: 1px solid transparent;
   border-radius: 8px;
   background: none;
-  /* 펴져 있을 때는 어두운 사이드바 위에 뜬다. 흰 버튼을 올리면 혼자 튄다. */
-  color: #6c727d;
 }
 
-.nav-toggle svg {
+.nav-btn svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -81,23 +76,39 @@ kbd {
   stroke-width: 1.4;
 }
 
-.nav-toggle .nav-pane {
+.nav-btn .nav-pane {
   stroke: none;
   fill: currentColor;
   opacity: .45;
 }
 
-.nav-toggle:hover { background: #1c1f26; color: #d4d8de; }
+/* 접기 - 어두운 메뉴 안, 로고와 같은 줄. 로고 중심에 맞춘 margin 이다. */
+.nav-hide {
+  flex: 0 0 auto;
+  margin: 12px 11px 0 0;
+  color: #6c727d;
+}
 
-/* 접으면 같은 버튼이 밝은 자료 화면 위로 올라온다. 색을 거기에 맞춘다. */
-.app.nav-hidden ~ .nav-toggle { color: var(--ink-soft); }
-.app.nav-hidden ~ .nav-toggle .nav-pane { opacity: 0; }
+.nav-hide:hover { background: #1c1f26; color: #d4d8de; }
 
-.app.nav-hidden ~ .nav-toggle:hover {
+/* 펴기 - 메뉴가 없으니 밝은 자료 화면 위에 뜬다. */
+.nav-show {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 11px;
+  z-index: 40;
+  color: var(--ink-soft);
+}
+
+.nav-show:hover {
   background: #eef0f4;
   border-color: var(--line);
   color: var(--ink);
 }
+
+/* .app 의 형제라 접혔을 때만 켜진다. 접기 버튼과 한 쌍이라 둘이 같이 안 보인다. */
+.app.nav-hidden ~ .nav-show { display: grid; }
 
 /* ---------- 사이드바 ---------- */
 
@@ -109,13 +120,15 @@ kbd {
   color: #e6e8ec;
 }
 
+.side-top { display: flex; align-items: flex-start; }
+
 .brand {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  /* 왼쪽 54px 은 떠 있는 접기 버튼 자리다. */
-  padding: 18px 18px 14px 54px;
+  flex: 1;
+  min-width: 0;
+  padding: 18px 18px 14px;
   border: 0;
   background: none;
   color: inherit;
@@ -1136,8 +1149,8 @@ a.link-btn {
   .app.nav-hidden { grid-template-columns: 1fr; }
   .app.nav-hidden .sidebar { display: flex; }
   .app.nav-hidden .toolbar { padding-left: 18px; }
-  .nav-toggle { display: none; }
-  .brand { padding-left: 18px; }
+  .nav-hide,
+  .app.nav-hidden ~ .nav-show { display: none; }
 
   .stage { display: none; }
   .app.viewing .sidebar { display: none; }
