@@ -26,6 +26,7 @@ const el = {
   notesBtn: $('notesBtn'),
   storageNotice: $('storageNotice'),
   viewTabs: $('viewTabs'),
+  treeTools: $('treeTools'),
   trashCount: $('trashCount'),
   trashBar: $('trashBar'),
   deleteItem: $('deleteItem'),
@@ -151,6 +152,18 @@ function formatDate(iso) {
 
 function rememberCollapsed() {
   localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...state.collapsed]))
+}
+
+/**
+ * 접힌 폴더는 id 문자열로 기억한다. 미분류 칸은 id 가 없어 'null' 이 그 자리다
+ * (폴더 토글이 String(null) 로 넣는 값과 같아야 둘이 같은 칸을 가리킨다).
+ */
+function setAllCollapsed(collapsed) {
+  state.collapsed = collapsed
+    ? new Set([...state.folders.map((f) => String(f.id)), 'null'])
+    : new Set()
+  rememberCollapsed()
+  renderList()
 }
 
 /* ---------- 사이드바 ---------- */
@@ -352,6 +365,8 @@ function renderList() {
   el.list.replaceChildren()
 
   const query = state.query.trim().toLowerCase()
+  // 검색 결과와 휴지통은 폴더 트리가 아니다. 접을 것이 없는데 버튼만 있으면 눌러 보게 된다.
+  el.treeTools.hidden = Boolean(query) || state.view === 'trash'
   if (query) return renderSearchResults(query)
 
   if (state.view === 'trash') return renderTrash()
@@ -1422,6 +1437,9 @@ el.accountPop.addEventListener('click', (e) => {
   if (action === 'change-password') changePassword()
   if (action === 'list-users') listUsers()
 })
+
+$('collapseAllBtn').addEventListener('click', () => setAllCollapsed(true))
+$('expandAllBtn').addEventListener('click', () => setAllCollapsed(false))
 
 $('newBundleBtn').addEventListener('click', () => {
   el.folderPicker.value = ''

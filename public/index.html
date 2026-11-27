@@ -43,6 +43,12 @@
       <button data-view="trash">휴지통 <span class="trash-count" id="trashCount" hidden></span></button>
     </div>
 
+    <!-- 폴더가 늘면 하나씩 접는 것이 일이 된다. 트리가 안 보이는 보기에서는 숨긴다. -->
+    <div class="tree-tools" id="treeTools">
+      <button class="tree-tool" id="collapseAllBtn" title="폴더를 모두 접습니다">⊟ 모두 접기</button>
+      <button class="tree-tool" id="expandAllBtn" title="폴더를 모두 펼칩니다">⊞ 모두 펼치기</button>
+    </div>
+
     <nav class="post-list" id="postList" aria-label="발표 목록"></nav>
 
     <div class="sidebar-foot">

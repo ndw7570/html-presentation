@@ -1243,6 +1243,30 @@ a.link-btn {
   font-weight: 600;
 }
 
+/* 보기 탭과 목록 사이의 잔손질 줄. 탭만큼 커지면 탭과 헷갈린다 - 작고 흐리게. */
+.tree-tools {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+  padding: 0 12px 6px;
+}
+
+.tree-tool {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #6c727d;
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.tree-tool:hover {
+  background: #1c1f26;
+  color: #d4d8de;
+}
+
 .trash-count {
   display: inline-block;
   min-width: 15px;
